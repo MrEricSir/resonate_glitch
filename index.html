@@ -1009,11 +1009,11 @@ function analyzeFrame() {
 
   // ── Texture analysis (every 5 frames — ~6 updates/sec at 30fps) ────────────
   analyzeFrameCount++;
-  if (analyzeFrameCount % 5 === 0) computeTextureFeatures(px);
+  if (analyzeFrameCount % 10 === 0) computeTextureFeatures(px);
 }
 
 // ── TEXTURE ANALYSIS ─────────────────────────────────────────────────────────
-// Called every 5 frames. Reads grayBuf (filled in the main loop) and px (RGBA).
+// Called every 10 frames. Reads grayBuf (filled in the main loop) and px (RGBA).
 // Fills S.tex* fields consumed by the sequencer and pickBeatStyle.
 
 // LBP clockwise neighbor offsets (right → up-right → up → ... → down-right)
@@ -1872,8 +1872,14 @@ let running = false;
 let overlayVisible = true;
 let firstFramePrimed = false;
 
-function drawLoop() {
-  if (!running) return;
+const FRAME_MS = 1000 / 30;  // cap to 30 fps — halves rAF/canvas/getImageData work on mobile
+let lastFrameTime = 0;
+let autoGenreCounter = 0;
+
+function drawLoop(ts = 0) {
+  requestAnimationFrame(drawLoop);
+  if (!running || ts - lastFrameTime < FRAME_MS) return;
+  lastFrameTime = ts;
 
   lastRawSrc = testMode && testImgReady ? testImgEl : video;
 
@@ -1881,8 +1887,9 @@ function drawLoop() {
   applyEffect(lastRawSrc);
   analyzeFrame();
 
-  // Genre detection uses raw source separately for stability
-  updateAutoGenre(lastRawSrc);
+  // Genre detection throttled to every 6 frames (~5×/sec at 30fps) — saves a
+  // full getImageData + pixel pass that previously ran 60× per second.
+  if (++autoGenreCounter % 6 === 0) updateAutoGenre(lastRawSrc);
 
   // On the very first frame in auto mode, snap immediately to the best-fit genre
   // rather than waiting for the EMA hysteresis to converge (which would always
@@ -1956,7 +1963,6 @@ function drawLoop() {
     document.getElementById('hPart').textContent   = sp.name + ' ' + (songPartMeasure + 1) + '/' + sp.measures;
   }
 
-  requestAnimationFrame(drawLoop);
 }
 
 // ── TEST MODE HELPERS ────────────────────────────────────────────────────────
@@ -2227,6 +2233,18 @@ testFileInput.addEventListener('change', () => {
     document.getElementById('testPanel').classList.add('on');
     document.getElementById('menuCameraItem').style.display = 'block';
     document.getElementById('menuOverlayItem').textContent = '◼ OVERLAY';
+  }
+});
+
+// Pause audio when the page is hidden (screen lock, app switch) so the Web
+// Audio graph stops burning CPU/battery in the background.
+document.addEventListener('visibilitychange', () => {
+  if (!launched) return;
+  if (document.hidden) {
+    Tone.Transport.pause();
+  } else {
+    Tone.Transport.start();
+    lastFrameTime = 0; // let the next visible frame render immediately
   }
 });
 </script>
