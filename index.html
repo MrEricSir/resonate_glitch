@@ -863,11 +863,12 @@ function analyzeFrame() {
   actx.drawImage(canvas, 0, 0, AW, AH);
   const { data: px } = actx.getImageData(0, 0, AW, AH);
 
-  const cW = AW / GRID, cH = AH / GRID;
+  // Polar grid: 4 rings × 4 sectors = 16 cells (ring * 4 + sector).
+  // Rings radiate from center outward; sectors are quadrants clockwise from top.
+  const acx = AW / 2, acy = AH / 2;
+  const aMaxR = Math.hypot(acx, acy);
 
   // Per-cell accumulators
-  const stripSum   = new Float32Array(STEPS);
-  const stripCount = new Float32Array(STEPS);
   const cBr = new Float32Array(16); // brightness sum
   const cHu = new Float32Array(16); // hue sum (saturated pixels only)
   const cMo = new Float32Array(16); // motion sum
@@ -882,16 +883,19 @@ function analyzeFrame() {
     for (let x = 0; x < AW; x++) {
       const i   = (y * AW + x) * 4;
       const r   = px[i], g = px[i+1], b = px[i+2];
-      const col = Math.min((x / cW) | 0, GRID - 1);
-      const row = Math.min((y / cH) | 0, GRID - 1);
-      const ci  = row * GRID + col;
+
+      // Map pixel to polar cell
+      const dx = x - acx, dy = y - acy;
+      const ringIdx   = Math.min((Math.sqrt(dx * dx + dy * dy) / aMaxR * GRID) | 0, GRID - 1);
+      const angle     = (Math.atan2(dy, dx) + Math.PI * 2.5) % (Math.PI * 2); // 0 at top, CW
+      const sectorIdx = Math.min((angle / (Math.PI * 2) * GRID) | 0, GRID - 1);
+      const ci = ringIdx * GRID + sectorIdx;
+
       const br  = (r + g + b) / 3;
       grayBuf[y * AW + x] = br;  // kept for texture analysis pass
 
       cBr[ci] += br; cN[ci]++;
       totBr += br;   totN++;
-      const sIdx = Math.min((x / AW * STEPS) | 0, STEPS - 1);
-      stripSum[sIdx] += br; stripCount[sIdx]++;
 
       // Only count saturated pixels toward hue (grays are uninformative)
       const sat = rgbSat(r, g, b);
@@ -961,10 +965,11 @@ function analyzeFrame() {
   // Derive melody scale from chord so they're always harmonically coherent
   S.scaleName = chordToScale(S.chordName);
 
-  // 16-strip brightness profile (spatial rhythm pattern from image)
+  // 16-step brightness profile from polar cells in sweep order
+  // (step 0 = ring 0 sector 0 … step 15 = ring 3 sector 3).
   let sMean = 0;
   for (let s = 0; s < STEPS; s++) {
-    S.stripBright[s] = stripSum[s] / (stripCount[s] || 1);
+    S.stripBright[s] = S.cellBright[s];
     sMean += S.stripBright[s];
   }
   S.stripMean = sMean / STEPS;
@@ -1904,52 +1909,62 @@ function drawLoop(ts = 0) {
     if (autoBtn) autoBtn.textContent = 'AUTO: ' + autoCurrentBest.toUpperCase();
   }
 
-  const cW = canvas.width  / GRID;
-  const cH = canvas.height / GRID;
-  const activeCol = seqStep % GRID;
+  const activeRing   = Math.floor(seqStep / GRID);
+  const activeSector = seqStep % GRID;
 
-  if (overlayVisible) {
-    // Grid overlay: each cell tinted by its hue, brightened when active column
-    for (let row = 0; row < GRID; row++) {
-      for (let col = 0; col < GRID; col++) {
-        const ci   = row * GRID + col;
+  // Polar overlay: always drawn regardless of overlayVisible.
+  // 4 rings × 4 sectors. Draw outer rings first so inner rings
+  // render on top when they overlap near the center.
+  {
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const maxR = Math.hypot(canvas.width / 2, canvas.height / 2);
+
+    for (let ring = GRID - 1; ring >= 0; ring--) {
+      const innerR = (ring / GRID) * maxR;
+      const outerR = ((ring + 1) / GRID) * maxR;
+
+      for (let sector = 0; sector < GRID; sector++) {
+        const ci   = ring * GRID + sector;
         const mot  = S.cellMotion[ci];
         const hue  = S.cellHue[ci];
-        const live = col === activeCol;
-        const x = col * cW, y = row * cH;
+        const live = ring === activeRing && sector === activeSector;
 
-        // Active column gets a brighter, wider alpha range
+        const startAngle = (sector / GRID) * Math.PI * 2 - Math.PI / 2; // 0 at top
+        const endAngle   = ((sector + 1) / GRID) * Math.PI * 2 - Math.PI / 2;
+
         const alpha = live
           ? 0.1 + Math.min(mot / 45, 0.55)
           : Math.min(mot / 65, 0.38);
-        ctx.fillStyle = `hsla(${hue},78%,58%,${alpha})`;
-        ctx.fillRect(x, y, cW, cH);
 
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, startAngle, endAngle);
+        if (innerR > 0) {
+          ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+        } else {
+          ctx.lineTo(cx, cy);
+        }
+        ctx.closePath();
+        ctx.fillStyle = `hsla(${hue},78%,58%,${alpha})`;
+        ctx.fill();
         ctx.strokeStyle = live ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.08)';
         ctx.lineWidth = live ? 1.5 : 0.5;
-        ctx.strokeRect(x + 0.5, y + 0.5, cW - 1, cH - 1);
+        ctx.stroke();
 
-        // Motion dot: radius scales with motion intensity
+        // Motion dot at arc midpoint
         if (mot > M_GATE) {
-          const dotR = Math.min(mot / 6, Math.min(cW, cH) * 0.28);
+          const midR     = (innerR + outerR) / 2;
+          const midAngle = (startAngle + endAngle) / 2;
+          const dotR     = Math.min(mot / 6, (outerR - innerR) * 0.3);
           ctx.beginPath();
-          ctx.arc(x + cW / 2, y + cH / 2, dotR, 0, Math.PI * 2);
+          ctx.arc(cx + midR * Math.cos(midAngle), cy + midR * Math.sin(midAngle), dotR, 0, Math.PI * 2);
           ctx.fillStyle = `hsla(${hue},100%,78%,0.65)`;
           ctx.fill();
         }
       }
     }
+  }
 
-    // Step indicator: row of dots across the top of the frame
-    const dotSpacing = canvas.width / STEPS;
-    for (let s = 0; s < STEPS; s++) {
-      const dx = s * dotSpacing + dotSpacing / 2;
-      ctx.beginPath();
-      ctx.arc(dx, 14, s === seqStep ? 5 : 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = s === seqStep ? '#00ff88' : 'rgba(255,255,255,0.25)';
-      ctx.fill();
-    }
-
+  if (overlayVisible) {
     // HUD text
     document.getElementById('hBpm').textContent    = Math.round(S.bpm);
     document.getElementById('hNote').textContent   = melodyNote;
