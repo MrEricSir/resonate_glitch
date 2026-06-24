@@ -153,6 +153,12 @@
 <input type="file" id="testFileInput" accept="image/*" multiple style="display:none">
 <video id="video" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
+<!-- Shown when AudioContext gets suspended after launch (e.g. iOS getUserMedia side-effect) -->
+<div id="audioWake" style="display:none; position:absolute; inset:0; z-index:15; align-items:center; justify-content:center; background:rgba(0,0,0,0.65); cursor:pointer;">
+  <div style="color:#0f0; font-family:monospace; font-size:1.3rem; text-align:center; border:1px solid #0f0; padding:1.5rem 2.5rem; letter-spacing:0.08em;">
+    TAP TO START AUDIO
+  </div>
+</div>
 <div id="testPanel">
   <div id="testToggle">TEST IMAGES ▾</div>
   <div id="testBody">
@@ -208,6 +214,7 @@
   <span>TEX <span class="hv" id="hTex">-</span></span>
   <span>STEP <span class="hv" id="hStep">-</span></span>
   <span>PART <span class="hv" id="hPart">-</span></span>
+  <span id="audioStateEl" style="display:none">CTX <span class="hv" id="hAudioCtx">-</span></span>
 </div>
 
 <script>
@@ -2192,14 +2199,38 @@ async function launchApp() {
     document.getElementById('mixer').classList.remove('on');
   }
 
-  // On iOS, getUserMedia changes the audio session category which can suspend the
-  // AudioContext even after it was successfully resumed in the tap handler.
-  // Re-resume here before starting the sequencer. iOS 15+ allows resume without
-  // a new gesture if the context was previously user-unlocked in the same session.
+  // On iOS, getUserMedia can change the AVAudioSession category and suspend the
+  // AudioContext even after a successful resume in the tap handler.
+  // Try both the raw context resume and Tone.start() before starting the sequencer.
+  try {
+    await Tone.context.rawContext.resume();
+  } catch (_) {}
   await Tone.start();
 
   startSequencer();
   drawLoop();
+
+  // Monitor AudioContext state — show the wake overlay if iOS suspends it.
+  // Also show a debug readout in the HUD so we can diagnose remotely.
+  const rawCtx = Tone.context.rawContext;
+  const audioWakeEl = document.getElementById('audioWake');
+  const audioStateEl = document.getElementById('audioStateEl');
+  const hAudioCtx = document.getElementById('hAudioCtx');
+
+  function onAudioStateChange() {
+    const state = rawCtx.state;
+    hAudioCtx.textContent = state;
+    audioStateEl.style.display = '';
+    if (state !== 'running') {
+      audioWakeEl.style.display = 'flex';
+    } else {
+      audioWakeEl.style.display = 'none';
+    }
+  }
+  rawCtx.addEventListener('statechange', onAudioStateChange);
+
+  // Check immediately after a short delay to catch the getUserMedia-suspend case
+  setTimeout(onAudioStateChange, 800);
 }
 
 // Start overlay tap → launch with live camera.
@@ -2261,27 +2292,30 @@ testFileInput.addEventListener('change', async () => {
   }
 });
 
-// Pause audio when the page is hidden (screen lock, app switch) so the Web
-// Audio graph stops burning CPU/battery in the background.
-// Guard: Transport.state === 'stopped' means startSequencer() hasn't run yet
-// (launched is set early in launchApp, before audio init completes), so we
-// must not call start/pause until the sequencer is actually running.
-// On iOS, AudioContext.resume() requires a user gesture, so we only call
-// Transport.start() if the context is already running — we can't force-resume
-// from a visibility event.
-// Tap anywhere on the canvas to re-wake audio if it gets suspended (e.g. after
-// screen lock/unlock on iOS where resume from visibilitychange isn't allowed).
+// Re-wake audio on iOS — called from canvas tap or the audioWake overlay.
+async function tryWakeAudio() {
+  if (!launched) return;
+  await Tone.start();
+  if (Tone.Transport.state !== 'started') Tone.Transport.start();
+  document.getElementById('audioWake').style.display = 'none';
+}
 document.getElementById('canvas').addEventListener('click', () => {
-  if (launched && Tone.context.state !== 'running') Tone.start();
+  if (launched && Tone.context.state !== 'running') tryWakeAudio();
 });
+document.getElementById('audioWake').addEventListener('click', tryWakeAudio);
 
 document.addEventListener('visibilitychange', () => {
   if (!launched || Tone.Transport.state === 'stopped') return;
   if (document.hidden) {
     Tone.Transport.pause();
   } else {
-    if (Tone.context.state === 'running') Tone.Transport.start();
     lastFrameTime = 0;
+    if (Tone.context.state === 'running') {
+      Tone.Transport.start();
+    } else {
+      // iOS re-locks AudioContext on return from background; show the wake overlay
+      document.getElementById('audioWake').style.display = 'flex';
+    }
   }
 });
 </script>
