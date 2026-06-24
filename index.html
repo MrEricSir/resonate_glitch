@@ -1336,7 +1336,7 @@ async function initAudio() {
   // while the limiter prevents clipping.
   reverb = new Tone.Reverb({ decay: 2.5, wet: 0.28 });
   await reverb.generate();
-  hallReverb = new Tone.Reverb({ decay: 5.5, wet: 0 });
+  hallReverb = new Tone.Reverb({ decay: 2.5, wet: 0 });
   await hallReverb.generate();
   const limiter = new Tone.Limiter(-1).toDestination();
   masterComp = new Tone.Compressor({
@@ -2192,12 +2192,21 @@ async function launchApp() {
     document.getElementById('mixer').classList.remove('on');
   }
 
+  // On iOS, getUserMedia changes the audio session category which can suspend the
+  // AudioContext even after it was successfully resumed in the tap handler.
+  // Re-resume here before starting the sequencer. iOS 15+ allows resume without
+  // a new gesture if the context was previously user-unlocked in the same session.
+  await Tone.start();
+
   startSequencer();
   drawLoop();
 }
 
-// Start overlay tap → launch with live camera
-document.getElementById('startOverlay').addEventListener('click', () => {
+// Start overlay tap → launch with live camera.
+// Tone.start() must be the very first await in a direct gesture handler on iOS —
+// the user-gesture context does not reliably propagate through nested async calls.
+document.getElementById('startOverlay').addEventListener('click', async () => {
+  await Tone.start();
   testMode = false;
   launchApp();
 });
@@ -2227,7 +2236,8 @@ document.getElementById('menuCameraItem').addEventListener('click', () => {
   if (launched) switchToCamera();
 });
 
-testFileInput.addEventListener('change', () => {
+testFileInput.addEventListener('change', async () => {
+  await Tone.start();
   const files = Array.from(testFileInput.files).filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
   testImages   = files.map(f => ({ url: URL.createObjectURL(f), name: f.name }));
@@ -2253,13 +2263,25 @@ testFileInput.addEventListener('change', () => {
 
 // Pause audio when the page is hidden (screen lock, app switch) so the Web
 // Audio graph stops burning CPU/battery in the background.
+// Guard: Transport.state === 'stopped' means startSequencer() hasn't run yet
+// (launched is set early in launchApp, before audio init completes), so we
+// must not call start/pause until the sequencer is actually running.
+// On iOS, AudioContext.resume() requires a user gesture, so we only call
+// Transport.start() if the context is already running — we can't force-resume
+// from a visibility event.
+// Tap anywhere on the canvas to re-wake audio if it gets suspended (e.g. after
+// screen lock/unlock on iOS where resume from visibilitychange isn't allowed).
+document.getElementById('canvas').addEventListener('click', () => {
+  if (launched && Tone.context.state !== 'running') Tone.start();
+});
+
 document.addEventListener('visibilitychange', () => {
-  if (!launched) return;
+  if (!launched || Tone.Transport.state === 'stopped') return;
   if (document.hidden) {
     Tone.Transport.pause();
   } else {
-    Tone.Transport.start();
-    lastFrameTime = 0; // let the next visible frame render immediately
+    if (Tone.context.state === 'running') Tone.Transport.start();
+    lastFrameTime = 0;
   }
 });
 </script>
