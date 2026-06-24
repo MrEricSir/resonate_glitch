@@ -1,0 +1,2234 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Eric Gregory <mrericsir@gmail.com> -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>resonate_glitch</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: monospace; }
+    video { display: none; }
+    canvas { position: absolute; inset: 0; width: 100vw; height: 100vh; display: block; }
+    #startOverlay {
+      position: absolute; inset: 0; z-index: 20;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: #000; cursor: pointer; user-select: none;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .echo-title {
+      font-size: clamp(28px, 9vw, 56px); font-family: monospace; font-weight: bold;
+      color: #00ff88; letter-spacing: 4px;
+    }
+    .echo-sub {
+      margin-top: 14px; font-size: clamp(12px, 3vw, 15px); font-family: monospace;
+      color: rgba(255,255,255,0.38); letter-spacing: 3px;
+    }
+    #menuBtn {
+      display: none; position: fixed; bottom: 24px; right: 24px; z-index: 10;
+      width: 52px; height: 52px; border-radius: 50%;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.25);
+      color: rgba(255,255,255,0.75); font-size: 22px; cursor: pointer; line-height: 1;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, border-color 0.15s;
+      align-items: center; justify-content: center;
+    }
+    #menuBtn:hover, #menuBtn:active { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.5); }
+    #menuBtn.on { display: flex; }
+    #menuPanel {
+      display: none; position: fixed; bottom: 88px; right: 16px; z-index: 10;
+      flex-direction: column; gap: 6px; min-width: 188px;
+    }
+    #menuPanel.open { display: flex; }
+    .menu-item {
+      background: rgba(0,0,0,0.88); border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.85); border-radius: 8px; padding: 13px 16px;
+      font-family: monospace; font-size: 13px; letter-spacing: 1px; text-align: left;
+      cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s; width: 100%;
+    }
+    .menu-item:hover, .menu-item:active { background: rgba(255,255,255,0.14); }
+    #hud {
+      display: none; position: absolute; bottom: 0; left: 0; right: 0; z-index: 5;
+      padding: 8px 16px; background: rgba(0,0,0,0.6);
+      font-size: 12px; color: #fff; gap: 20px; align-items: center; flex-wrap: wrap;
+    }
+    #hud.on { display: flex; }
+    .hv { color: #00ff88; font-weight: bold; }
+    #mixer {
+      display: none; position: absolute; top: 12px; right: 12px; z-index: 6;
+      background: rgba(0,0,0,0.72); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px; font-family: monospace; font-size: 12px; color: #fff;
+      min-width: 200px; overflow: hidden;
+    }
+    #mixer.on { display: block; }
+    /* mobile-friendly tap targets for test panel controls */
+    #testPanel {
+      display: none; position: absolute; top: 12px; left: 12px; z-index: 6;
+      background: rgba(0,0,0,0.72); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px; font-family: monospace; font-size: 12px; color: #fff;
+      min-width: 210px;
+    }
+    #testPanel.on { display: block; }
+    #testToggle {
+      padding: 7px 12px; cursor: pointer; user-select: none;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #00ff88; font-weight: bold; letter-spacing: 1px;
+    }
+    #testToggle:hover { background: rgba(255,255,255,0.06); }
+    #testBody { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    #testBody.collapsed { display: none; }
+    #testFilename { font-size: 11px; color: rgba(255,255,255,0.55); word-break: break-all; }
+    .test-nav { display: flex; align-items: center; gap: 8px; }
+    .test-nav button {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-family: monospace;
+    }
+    .test-nav button:hover { background: rgba(255,255,255,0.18); }
+    #testCounter { flex: 1; text-align: center; color: rgba(255,255,255,0.5); font-size: 11px; }
+    .test-auto { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.6); cursor: pointer; }
+    .test-auto select {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 4px; padding: 2px 4px; font-family: monospace; font-size: 11px;
+    }
+    .test-genres { display: flex; gap: 4px; flex-wrap: wrap; }
+    .genre-btn {
+      flex: 1; min-width: 42px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.6); border-radius: 4px; padding: 7px 6px;
+      cursor: pointer; font-family: monospace; font-size: 10px; letter-spacing: 0.5px;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .genre-btn:hover, .genre-btn:active { background: rgba(255,255,255,0.14); color: #fff; }
+    .genre-btn.active { background: rgba(0,255,136,0.15); border-color: #00ff88; color: #00ff88; }
+    #autoGenreBtn.active { background: rgba(255,200,0,0.15); border-color: #ffcc00; color: #ffcc00; }
+    .test-fx { display: flex; gap: 4px; flex-wrap: wrap; }
+    .test-fx-label { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 1px; margin-bottom: 2px; }
+    .fx-btn {
+      flex: 1; min-width: 38px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.6); border-radius: 4px; padding: 7px 5px;
+      cursor: pointer; font-family: monospace; font-size: 10px; letter-spacing: 0.5px;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .fx-btn:hover, .fx-btn:active  { background: rgba(255,255,255,0.14); color: #fff; }
+    .fx-btn.active { background: rgba(255,160,0,0.18); border-color: #ffa000; color: #ffa000; }
+    .test-nav button {
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      min-width: 44px; min-height: 36px;
+    }
+    #testToggle, #mixerToggle {
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+      min-height: 40px;
+    }
+    #mixerToggle {
+      padding: 7px 12px; cursor: pointer; user-select: none;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #00ff88; font-weight: bold; letter-spacing: 1px;
+    }
+    #mixerToggle:hover { background: rgba(255,255,255,0.06); }
+    #mixerBody { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    #mixerBody.collapsed { display: none; }
+    .mx-row { display: flex; align-items: center; gap: 8px; }
+    .mx-row span:first-child { width: 52px; color: rgba(255,255,255,0.6); font-size: 11px; }
+    .mx-row input[type=range] { flex: 1; accent-color: #00ff88; cursor: pointer; }
+    .mx-val { width: 30px; text-align: right; color: #00ff88; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<div id="startOverlay">
+  <div class="echo-title">resonate_glitch</div>
+  <div class="echo-sub">TAP TO BEGIN</div>
+</div>
+<button id="menuBtn" aria-label="Menu">☰</button>
+<div id="menuPanel">
+  <button class="menu-item" id="menuOverlayItem">◻ OVERLAY</button>
+  <button class="menu-item" id="menuTestItem">⊞ LOAD TEST IMAGES</button>
+  <button class="menu-item" id="menuCameraItem" style="display:none">⊙ LIVE CAMERA</button>
+</div>
+<input type="file" id="testFileInput" accept="image/*" multiple style="display:none">
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div id="testPanel">
+  <div id="testToggle">TEST IMAGES ▾</div>
+  <div id="testBody">
+    <div id="testFilename">—</div>
+    <div class="test-nav">
+      <button id="testPrev">◀</button>
+      <span id="testCounter">0 / 0</span>
+      <button id="testNext">▶</button>
+    </div>
+    <label class="test-auto">
+      <input type="checkbox" id="testAuto"> AUTO-CYCLE
+      <select id="testDwell">
+        <option value="2000">2s</option>
+        <option value="5000" selected>5s</option>
+        <option value="10000">10s</option>
+        <option value="30000">30s</option>
+      </select>
+    </label>
+    <div class="test-genres">
+      <button class="genre-btn active" data-genre="techno">TECHNO</button>
+      <button class="genre-btn" data-genre="orchestral">ORCH</button>
+      <button class="genre-btn" data-genre="choir">CHOIR</button>
+      <button class="genre-btn" data-genre="ambient">AMBIENT</button>
+      <button class="genre-btn" id="autoGenreBtn">AUTO</button>
+    </div>
+    <div class="test-fx-label">FX</div>
+    <div class="test-fx">
+      <button class="fx-btn active" data-fx="none">NONE</button>
+      <button class="fx-btn" data-fx="contrast">CNTRST</button>
+      <button class="fx-btn" data-fx="pixel">PIXEL</button>
+      <button class="fx-btn" data-fx="glitch">GLITCH</button>
+      <button class="fx-btn" data-fx="chroma">CHROMA</button>
+    </div>
+  </div>
+</div>
+<div id="mixer">
+  <div id="mixerToggle">MIXER ▾</div>
+  <div id="mixerBody">
+    <div class="mx-row"><span>MELODY</span><input type="range" id="mxMelody" min="-36" max="6" step="1" value="-12"><span class="mx-val" id="vMelody">-12</span></div>
+    <div class="mx-row"><span>BASS</span>  <input type="range" id="mxBass"   min="-36" max="6" step="1" value="-10"><span class="mx-val" id="vBass">-10</span></div>
+    <div class="mx-row"><span>KICK</span>  <input type="range" id="mxKick"   min="-36" max="6" step="1" value="-5"> <span class="mx-val" id="vKick">-5</span></div>
+    <div class="mx-row"><span>SNARE</span> <input type="range" id="mxSnare"  min="-36" max="6" step="1" value="-14"><span class="mx-val" id="vSnare">-14</span></div>
+    <div class="mx-row"><span>HIHAT</span> <input type="range" id="mxHihat"  min="-36" max="6" step="1" value="-12"><span class="mx-val" id="vHihat">-12</span></div>
+  </div>
+</div>
+<div id="hud">
+  <span>BPM <span class="hv" id="hBpm">-</span></span>
+  <span>NOTE <span class="hv" id="hNote">-</span></span>
+  <span>CHORD <span class="hv" id="hScale">-</span></span>
+  <span>GENRE <span class="hv" id="hGenre">-</span></span>
+  <span>MOTION <span class="hv" id="hMotion">-</span></span>
+  <span>BEAT <span class="hv" id="hBeat">-</span></span>
+  <span>TEX <span class="hv" id="hTex">-</span></span>
+  <span>STEP <span class="hv" id="hStep">-</span></span>
+  <span>PART <span class="hv" id="hPart">-</span></span>
+</div>
+
+<script>
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+// Small analysis canvas for performance — we do pixel math here, not on the
+// full-resolution display canvas.
+const AW = 160, AH = 120;
+const ana  = document.createElement('canvas');
+ana.width  = AW; ana.height = AH;
+const actx = ana.getContext('2d', { willReadFrequently: true });
+
+// Separate small canvas for raw (pre-effect) genre analysis
+const RW = 80, RH = 60;
+const rawAna  = document.createElement('canvas');
+rawAna.width  = RW; rawAna.height = RH;
+const rawActx = rawAna.getContext('2d', { willReadFrequently: true });
+
+// Double-buffer for motion diff (avoids GC pressure from new Uint8Array each frame)
+const bufA  = new Uint8Array(AW * AH * 4);
+const bufB  = new Uint8Array(AW * AH * 4);
+let prevPx  = null;
+let currBuf = bufA;
+
+// Persistent grayscale buffer for texture analysis (reused each frame, no allocation)
+const grayBuf = new Float32Array(AW * AH);
+
+// ── CONFIG ───────────────────────────────────────────────────────────────────
+const GRID   = 4;    // 4x4 grid = 16 cells
+const STEPS  = 16;   // 16th-note sequencer
+const BPM_LO = 80;
+const BPM_HI = 140;
+const M_GATE = 10;   // min average motion (0-255 range) to trigger a note
+
+// ── SCALES ───────────────────────────────────────────────────────────────────
+// 8 entries each. Indices [0,1] = bass/root notes (octave 3).
+// Indices [2-7] = melody range (octave 4-5).
+// Dominant image hue selects the scale, setting the harmonic "mood."
+const SCALES = {
+  major_penta: ['C3','G3', 'C4','D4','E4','G4','A4','C5'],
+  dorian:      ['C3','G3', 'C4','D4','Eb4','F4','G4','A4'],
+  minor_penta: ['C3','G3', 'C4','Eb4','F4','G4','Bb4','C5'],
+  blues:       ['C3','G3', 'C4','Eb4','F4','F#4','G4','Bb4'],
+};
+
+// ── CHORD / ARPEGGIO SYSTEM ──────────────────────────────────────────────────
+// Chord types defined as semitone intervals from C.
+// Root is anchored at C2 so the arpeggio lives in bass register.
+const CHORD_TYPES = {
+  // Mellow family (earthy/brownish hues, warm+desaturated)
+  maj7:  [0, 4, 7, 11],        // Cmaj7  — lush, floating
+  sus2:  [0, 2, 7, 12],        // Csus2  — open, airy
+  add9:  [0, 4, 7, 14],        // Cadd9  — warm, spacious
+  // Minor family (dark/dim scenes)
+  minor: [0, 3, 7, 12],        // Cm     — melancholic
+  min7:  [0, 3, 7, 10],        // Cm7    — moody, jazzy dark
+  min9:  [0, 3, 7, 10, 14],    // Cm9    — deep, complex
+  // Pop/major family (vivid primary colors)
+  major: [0, 4, 7, 12],        // C      — bright, resolved
+  dom7:  [0, 4, 7, 10],        // C7     — bluesy, driving
+  maj6:  [0, 4, 7, 9],         // Cmaj6  — sunny pop
+};
+
+// Arpeggio patterns: each entry is a list of chord-tone indices (0 = root, etc.)
+// Chosen randomly on "big change" events in the image.
+const ARP_PATTERNS = [
+  [0, 1, 2, 3],      // straight up
+  [3, 2, 1, 0],      // straight down
+  [0, 2, 1, 3],      // skip ascending
+  [0, 1, 3, 2],      // up then drop
+  [0, 2, 3, 1],      // spread
+  [0, 3, 1, 2],      // outer first
+  [0, 1, 2, 1],      // up-bounce
+  [0, 1, 0, 2],      // pedal root
+];
+
+// ── BASS RHYTHM PATTERNS ──────────────────────────────────────────────────────
+// 16-step gate arrays (1 = note fires, 0 = rest). Rotated every 4 bars to
+// prevent the bass from locking into a single loop. Different patterns give
+// grooves from straight quarters to funky 16th-note pushes.
+const BASS_RHYTHMS = [
+  [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], // straight quarters
+  [1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,0], // syncopated offbeat
+  [1,0,1,0, 0,1,0,1, 1,0,1,0, 0,0,1,0], // busy 16ths
+  [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,1,0,0], // sparse push
+  [1,0,1,0, 1,0,0,0, 1,0,1,0, 1,0,0,1], // funk 16ths
+  [1,0,0,0, 1,0,1,0, 0,0,1,0, 1,0,0,0], // groove push
+  [1,1,0,0, 1,0,0,1, 0,0,1,0, 0,1,0,0], // rolling
+  [1,0,0,0, 0,1,0,0, 1,0,0,0, 0,0,1,0], // half-time feel
+];
+let bassRhythmIdx = 0;
+let bassRhythmBar = 0;
+
+const NOTE_NAMES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+function buildArpNotes(chordName) {
+  return CHORD_TYPES[chordName].map(semi =>
+    NOTE_NAMES[semi % 12] + (2 + Math.floor(semi / 12))
+  );
+}
+
+// Hue (0-360) + brightness (0-255) + avg saturation (0-1) → chord family
+function pickChord(hue, bright, sat) {
+  const b = bright / 255;
+
+  // Dark/dim scenes → minor family regardless of hue
+  if (b < 0.15) return 'min9';
+  if (b < 0.32) return sat > 0.45 ? 'minor' : 'min7';
+
+  // Earthy/brownish: warm hue + moderate-low saturation → mellow family
+  if (hue > 10  && hue < 55  && sat < 0.62) return 'maj7';   // amber/brown
+  if (hue > 55  && hue < 105 && sat < 0.58) return 'sus2';   // olive/muted yellow-green
+  if (hue > 280 && hue < 345 && sat < 0.50) return 'add9';   // dusty lavender
+
+  // Vivid/saturated primary-adjacent colors → pop/major family
+  if (sat > 0.50 && b > 0.42) {
+    if (hue < 22  || hue > 340) return 'dom7';   // vivid red   → bluesy drive
+    if (hue < 75)               return 'maj6';   // vivid yellow → sunny pop
+    if (hue < 165)              return 'major';  // vivid green  → bright major
+    if (hue < 210)              return 'add9';   // vivid cyan   → open pop
+    if (hue < 270)              return 'minor';  // vivid blue   → sad even bright
+    if (hue < 315)              return 'maj7';   // vivid purple → lush major7
+    return 'major';                               // vivid pink   → pop major
+  }
+
+  // Mid-range fallback: cool hues go minor, warm go mellow
+  if (hue > 180 && hue < 310) return 'min7';
+  return 'maj7';
+}
+
+// Returns the note one chromatic semitone below the given Tone.js note string
+function semitoneLower(noteStr) {
+  const semis = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+  const m = noteStr.match(/([A-G][b#]?)(\d+)/);
+  if (!m) return noteStr;
+  const idx = semis.indexOf(m[1]), oct = parseInt(m[2]);
+  return (idx === 0 ? 'B' + (oct - 1) : semis[idx - 1] + oct);
+}
+
+// Chord → compatible scale for melody (so arpeggio + melody are harmonically coherent)
+function chordToScale(chordName) {
+  switch (chordName) {
+    case 'major': case 'maj6': return 'major_penta';
+    case 'dom7':               return 'blues';
+    case 'maj7': case 'sus2': case 'add9': return 'dorian';
+    case 'minor': case 'min7': case 'min9': return 'minor_penta';
+    default: return 'minor_penta';
+  }
+}
+
+// ── BEAT PATTERNS ────────────────────────────────────────────────────────────
+// Each pattern defines which 16th-note steps (0–15) fire kick/snare/hat.
+const BEAT_PATTERNS = {
+  standard:  {
+    kick:  [0, 4, 8, 12],
+    snare: [4, 12],
+    hat:   [0, 2, 4, 6, 8, 10, 12, 14],
+  },
+  halftime:  {
+    kick:  [0, 1, 4, 8],
+    snare: [8],
+    hat:   [0, 4, 8, 12],
+  },
+  bossanova: {
+    kick:  [0, 3, 6, 10],
+    snare: [4, 12],
+    hat:   [0, 2, 4, 6, 8, 10, 12, 14],
+  },
+  samba:     {
+    kick:  [0, 2, 8, 10],
+    snare: [4, 6, 12, 14],
+    hat:   [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+  },
+  swing:     {
+    kick:  [0, 8],
+    snare: [4, 12],
+    hat:   [0, 3, 4, 7, 8, 11, 12, 15],  // triplet-swing feel
+  },
+  funk:      {
+    kick:  [0, 3, 8, 11],
+    snare: [4, 10, 12],
+    hat:   [0, 2, 4, 6, 8, 10, 12, 14],
+  },
+  breakbeat: {
+    kick:  [0, 3, 8, 11, 14],
+    snare: [4, 12],
+    hat:   [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14],
+  },
+  dnb:       {
+    kick:  [0, 10],
+    snare: [4, 12],
+    hat:   [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+  },
+};
+
+// ── GENRE PRESETS ────────────────────────────────────────────────────────────
+// Each preset defines oscillator type, envelope, effect levels, and volumes.
+// Applied by setGenre() with smooth parameter ramping.
+const GENRE_PRESETS = {
+  techno: {
+    melodyOsc: 'triangle', melodyEnv: { attack: 0.05, decay: 0.3,  sustain: 0.1,  release: 1.5 },
+    bassOsc:   'sawtooth', bassEnv:   { attack: 0.01, decay: 0.2,  sustain: 0.45, release: 0.5 },
+    reverbWet: 0.28, ppWet: 0.28, chorusWet: 0,
+    hallWet: 0, autoFilterWet: 0, phaserWet: 0.38,
+    vibratoWet: 0, vibratoDepth: 0.04, vibratoFreq: 5,
+    vol: { melody: -18, bass: -17, kick: -12, snare: -20, hihat: -18,
+           organ: -36, woodwind: -36, ambientPad: -36,
+           ambientBassNote: -36, ambientSparkle: -36 },
+  },
+  orchestral: {
+    // Strings (fatsawtooth): bowed bow-pressure attack, fully sustained, ensemble spread.
+    // Woodwind countermelody plays above in the drum slot.
+    melodyOsc: { type: 'fatsawtooth', spread: 22, count: 3 },
+    melodyEnv: { attack: 0.14, decay: 0.08, sustain: 0.92, release: 1.0 },
+    bassOsc:   'triangle', bassEnv: { attack: 0.1,  decay: 0.35, sustain: 0.5,  release: 2.2 },
+    reverbWet: 0.55, ppWet: 0.12, chorusWet: 0.18,
+    hallWet: 0.42, autoFilterWet: 0, phaserWet: 0,
+    vibratoWet: 0.75, vibratoDepth: 0.04, vibratoFreq: 4.8,
+    vol: { melody: -13, bass: -13, kick: -36, snare: -36, hihat: -36,
+           organ: -36, woodwind: -10, ambientPad: -36,
+           ambientBassNote: -36, ambientSparkle: -36 },
+  },
+  choir: {
+    // Choir voices (fatsine, wide spread): blended, slightly detuned sine waves
+    // approximate the wash of multiple human voices. Heavy chorus thickens further.
+    melodyOsc: { type: 'fatsine', spread: 46, count: 5 },
+    melodyEnv: { attack: 0.85, decay: 0.2, sustain: 0.82, release: 3.5 },
+    bassOsc:   'sine',     bassEnv:   { attack: 0.3,  decay: 0.5,  sustain: 0.65, release: 3.5 },
+    reverbWet: 0.62, ppWet: 0.30, chorusWet: 0.72,
+    hallWet: 0.58, autoFilterWet: 0, phaserWet: 0,
+    vibratoWet: 1.0, vibratoDepth: 0.07, vibratoFreq: 5.2,
+    vol: { melody: -3,  bass: -9,  kick: -36, snare: -14, hihat: -36,
+           organ: -4,  woodwind: -9, ambientPad: -36,
+           ambientBassNote: -36, ambientSparkle: -36 },
+  },
+  ambient: {
+    // Melody/bass/drums all silent; pulsating pad chord is the only sound
+    melodyOsc: 'sine',     melodyEnv: { attack: 0.9,  decay: 1.0,  sustain: 0.6,  release: 7.0 },
+    bassOsc:   'sine',     bassEnv:   { attack: 0.6,  decay: 0.8,  sustain: 0.55, release: 5.0 },
+    reverbWet: 0.52, ppWet: 0.42, chorusWet: 0.35,
+    hallWet: 0.22, autoFilterWet: 0.42, phaserWet: 0,
+    vibratoWet: 0, vibratoDepth: 0.04, vibratoFreq: 5,
+    vol: { melody: -36, bass: -36, kick: -36, snare: -36, hihat: -36,
+           organ: -4, woodwind: -36, ambientPad: 6,
+           ambientBassNote: 8, ambientSparkle: 6 },
+  },
+};
+
+function pickBeatStyle(t, totalMotion, domHue, avgSat) {
+  const highMotion = totalMotion > 18;
+  const geo   = S.texGeometric;   // high → structured, prefers regular patterns
+  const cmplx = S.texComplexity;  // high → organic, prefers irregular patterns
+
+  if (t > 0.88 && highMotion)                                    return 'dnb';
+  if (t > 0.72 && highMotion && (avgSat > 0.4 || cmplx > 0.62)) return 'breakbeat';
+  if (t > 0.60 && domHue > 10 && domHue < 90 && geo  > 0.35)   return 'funk';
+  if (t > 0.55 && domHue > 10 && domHue < 70 && avgSat < 0.5)  return 'swing';
+  if (t > 0.45 && (avgSat > 0.55 || cmplx > 0.65))             return 'samba';
+  if (t > 0.30 && t < 0.65 && (avgSat < 0.4 || geo > 0.52))   return 'bossanova';
+  if (t < 0.25)                                                   return 'halftime';
+  return 'standard';
+}
+
+// ── SCENE STATE ──────────────────────────────────────────────────────────────
+// Updated each rAF by analyzeFrame(), read each 16th note by the sequencer.
+const S = {
+  scaleName:       'minor_penta',
+  bpm:             90,
+  cellBright:      new Float32Array(GRID * GRID),
+  cellMotion:      new Float32Array(GRID * GRID),
+  cellHue:         new Float32Array(GRID * GRID),
+  totalMotion:     0,
+  domHue:          180,
+  avgSat:          0,
+  stripBright:     new Float32Array(STEPS),
+  stripMean:       128,
+  stripStd:        1,
+  overallBright:   128,
+  // Chord / arpeggio
+  chordName:        'maj7',
+  chordCandidate:   'maj7',
+  chordStableCount: 0,
+  arpNotes:         buildArpNotes('maj7'),  // current arpeggio notes (Tone.js strings)
+  arpPatternIdx:    0,
+  smoothMotion:     0,      // EMA of totalMotion, for motion-spike detection
+  smoothBright:     128,    // EMA of overallBright, for brightness-spike detection
+  triggerFill:      false,  // set by analyzeFrame, consumed by drum loop
+  lastFillTime:    -Infinity, // Tone.Transport.seconds at last fill (for gate)
+  // Beat style
+  beatStyle:        'standard',
+  beatCandidate:    'standard',
+  beatStableCount:  0,
+  pendingBeatStyle: null,
+  // Texture analysis (updated every ~5 frames via computeTextureFeatures)
+  texGeometric:     0,   // 0–1: edges cluster at cardinal angles (1 = very geometric)
+  texComplexity:    0,   // 0–1: LBP non-uniformity (1 = complex organic texture)
+  texPeriodic:      0,   // 0–1: row autocorrelation (1 = strong repeating pattern)
+  texEdgeDensity:   0,   // 0–1: fraction of edge pixels
+  texFine:          0,   // 0–1: avg local block variance (1 = fine-grained detail)
+  texLinearity:     0,   // 0–1: mean horizontal edge run-length (1 = long straight lines)
+  texColorClusters: 0,   // 0–12: number of distinct active hue clusters
+};
+let seqStep          = 0; // current sequencer step, written by audio thread, read by rAF
+let analyzeFrameCount = 0;
+
+// ── TEST MODE STATE ───────────────────────────────────────────────────────────
+let testMode       = false;
+let testImages     = [];   // [{ url, name }]
+let testImgIdx     = 0;
+
+// ── VISUAL EFFECTS ────────────────────────────────────────────────────────────
+let activeEffect = 'none';
+let fxScratch    = null; // reusable offscreen canvas for effects needing a copy
+
+// Auto genre detection state
+let autoGenreMode     = false;
+let autoScores        = { techno: 0.25, orchestral: 0.25, choir: 0.25, ambient: 0.25 };
+let autoCurrentBest   = 'techno';
+let autoDwellBars     = 0;   // how many bars we've been on the current best
+let autoPendingSwitch = null; // genre name waiting to be applied at bar boundary
+let lastRawSrc        = null; // last raw video/image source, for priming on AUTO enable
+
+// Glitch effect state machine
+// Between glitch events the "base" effect (none/contrast/chroma) is shown.
+// Each event freezes a frame, holds large band-shifts for ~100ms, then pauses.
+let glitchNextMs = 0;    // performance.now() when next glitch event fires
+let glitchEndMs  = 0;    // performance.now() when current glitch display ends
+let glitchBase   = 'none'; // base effect shown between glitches
+let glitchFrozen = null;   // canvas holding the frame frozen at event onset
+let glitchBands      = [];   // current band config [{y,bh,dx,dy}] — held across frames
+let glitchBandRefreshMs = 0; // when to pick a new band config
+let glitchVertical   = false; // true = bands shift up/down, false = left/right
+
+// ── Auto genre detection ──────────────────────────────────────────────────────
+// Compute raw genre scores from a raw image source. Returns {techno, orchestral, choir, ambient}.
+function computeGenreScores(rawSrc) {
+  rawActx.drawImage(rawSrc, 0, 0, RW, RH);
+  const { data: px } = rawActx.getImageData(0, 0, RW, RH);
+  const hHist = new Float32Array(12);
+  let brSum = 0, satSum = 0, satN = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], g = px[i+1], b = px[i+2];
+    brSum += (r + g + b) / 3;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx > 30) {
+      const s = (mx - mn) / mx;
+      satSum += s; satN++;
+      if (s > 0.15) {
+        let h = 0;
+        if (mx === r)      h = ((g - b) / (mx - mn + 1e-6) + 6) % 6 * 60;
+        else if (mx === g) h = ((b - r) / (mx - mn + 1e-6) + 2) * 60;
+        else               h = ((r - g) / (mx - mn + 1e-6) + 4) * 60;
+        hHist[Math.min((h / 30) | 0, 11)]++;
+      }
+    }
+  }
+  const bright   = brSum / (RW * RH) / 255;
+  const sat      = satN > 0 ? satSum / satN : 0;
+  const domBucket = hHist.indexOf(Math.max(...hHist));
+  const domHue   = domBucket * 30 + 15;
+  let hd = Math.abs(domHue - 30);
+  if (hd > 180) hd = 360 - hd;
+  const warmth   = Math.max(0, 1 - hd / 180);
+  const motion   = Math.max(0, Math.min(1, (S.bpm - BPM_LO) / (BPM_HI - BPM_LO)));
+  const complex  = S.texComplexity;
+  const period   = S.texPeriodic;
+
+  // Scoring rationale:
+  // • techno:     strong repeating geometry (period) + cool/neutral tones
+  // • orchestral: rich texture (complex) + warmth; NOT highly periodic
+  // • choir:      bright + warm + saturated (vivid, human, festive scenes)
+  // • ambient:    BOTH dark AND non-periodic; warm suppresses it (warm-dark → orchestral)
+  return {
+    techno:     0.45 * bright + 0.30 * warmth + 0.25 * sat,
+    orchestral: 0.50 * complex + 0.30 * warmth + 0.15 * bright + 0.05 * (1 - period),
+    choir:      0.55 * period + 0.20 * sat + 0.15 * (1 - warmth) + 0.10 * motion,
+    ambient:    0.55 * (1 - bright) * (1 - period) + 0.30 * (1 - warmth) + 0.15 * (1 - sat),
+  };
+}
+
+function updateAutoGenre(rawSrc) {
+  if (!autoGenreMode) return;
+  lastRawSrc = rawSrc;
+
+  const scores = computeGenreScores(rawSrc);
+
+  // EMA smoothing (~2s TC at 60fps)
+  const α = 0.03;
+  for (const g in autoScores) autoScores[g] = autoScores[g] * (1 - α) + scores[g] * α;
+
+  // Find best
+  const best = Object.keys(autoScores).reduce((a, b) => autoScores[a] >= autoScores[b] ? a : b);
+
+  if (best !== autoCurrentBest) {
+    // Hysteresis: require clear margin before counting dwell
+    const margin = autoScores[best] - autoScores[autoCurrentBest];
+    if (margin >= 0.08) {
+      autoDwellBars++;
+      if (autoDwellBars >= 4 && autoPendingSwitch !== best) {
+        // Schedule switch at next bar boundary
+        autoPendingSwitch = best;
+        if (Tone.Transport.state === 'started') {
+          const msPerBeat = 60000 / Math.max(S.bpm, 40);
+          const pos       = Tone.Transport.position.split(':').map(Number);
+          const beatFrac  = pos[1] + pos[2] / 4;
+          const msToBar   = (4 - beatFrac) * msPerBeat;
+          Tone.Transport.scheduleOnce(() => {
+            if (autoPendingSwitch && autoGenreMode) {
+              autoCurrentBest   = autoPendingSwitch;
+              autoPendingSwitch = null;
+              autoDwellBars     = 0;
+              setGenre(autoCurrentBest);
+              const btn = document.getElementById('autoGenreBtn');
+              if (btn) btn.textContent = 'AUTO: ' + autoCurrentBest.toUpperCase();
+            }
+          }, `+${(msToBar / 1000).toFixed(3)}`);
+        }
+      }
+    } else {
+      autoDwellBars = 0;
+    }
+  } else {
+    autoDwellBars = 0;
+    autoPendingSwitch = null;
+  }
+}
+
+function applyEffect(src) {
+  const w = canvas.width, h = canvas.height;
+
+  if (activeEffect === 'contrast') {
+    ctx.filter = 'contrast(300%) saturate(150%)';
+    ctx.drawImage(src, 0, 0, w, h);
+    ctx.filter = 'none';
+    return;
+  }
+
+  if (activeEffect === 'pixel') {
+    const block = 14;
+    if (!fxScratch) fxScratch = document.createElement('canvas');
+    fxScratch.width  = Math.ceil(w / block);
+    fxScratch.height = Math.ceil(h / block);
+    fxScratch.getContext('2d').drawImage(src, 0, 0, fxScratch.width, fxScratch.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(fxScratch, 0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    return;
+  }
+
+  if (activeEffect === 'glitch') {
+    const now = performance.now();
+
+    // Helper: render src with the current glitchBase effect
+    const drawBase = () => {
+      if (glitchBase === 'contrast') {
+        ctx.filter = 'contrast(300%) saturate(150%)';
+        ctx.drawImage(src, 0, 0, w, h);
+        ctx.filter = 'none';
+      } else if (glitchBase === 'invert') {
+        ctx.filter = 'invert(100%)';
+        ctx.drawImage(src, 0, 0, w, h);
+        ctx.filter = 'none';
+      } else if (glitchBase === 'hue') {
+        ctx.filter = 'hue-rotate(180deg) saturate(280%)';
+        ctx.drawImage(src, 0, 0, w, h);
+        ctx.filter = 'none';
+      } else if (glitchBase === 'scan') {
+        // Desaturated base + horizontal scanline overlay
+        ctx.filter = 'grayscale(60%) contrast(140%)';
+        ctx.drawImage(src, 0, 0, w, h);
+        ctx.filter = 'none';
+        ctx.fillStyle = 'rgba(0,0,0,0.38)';
+        for (let sy = 0; sy < h; sy += 3) ctx.fillRect(0, sy, w, 1);
+      } else if (glitchBase === 'chroma') {
+        if (!fxScratch) fxScratch = document.createElement('canvas');
+        const S4 = 4;
+        fxScratch.width  = Math.ceil(w / S4);
+        fxScratch.height = Math.ceil(h / S4);
+        const sc4 = fxScratch.getContext('2d');
+        sc4.drawImage(src, 0, 0, fxScratch.width, fxScratch.height);
+        const sw4 = fxScratch.width, sh4 = fxScratch.height;
+        const si4 = sc4.getImageData(0, 0, sw4, sh4);
+        const oi4 = sc4.createImageData(sw4, sh4);
+        const sd4 = si4.data, od4 = oi4.data;
+        const shift4 = 4;
+        for (let py = 0; py < sh4; py++) {
+          for (let px = 0; px < sw4; px++) {
+            const di4 = (py * sw4 + px) * 4;
+            od4[di4]   = sd4[(py * sw4 + Math.min(px + shift4, sw4 - 1)) * 4];
+            od4[di4+1] = sd4[di4 + 1];
+            od4[di4+2] = sd4[(py * sw4 + Math.max(px - shift4, 0)) * 4 + 2];
+            od4[di4+3] = 255;
+          }
+        }
+        sc4.putImageData(oi4, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(fxScratch, 0, 0, w, h);
+      } else {
+        ctx.drawImage(src, 0, 0, w, h); // 'none'
+      }
+    };
+
+    // Overlay large band-shifts from the frozen frame.
+    // Band config is regenerated every 180–350ms so it feels like a slow smear
+    // rather than per-frame flicker.
+    const drawBands = () => {
+      if (!glitchFrozen) return;
+      if (now >= glitchBandRefreshMs || glitchBands.length === 0) {
+        glitchBands = [];
+        const count = 6 + Math.floor(Math.random() * 6);
+        for (let b = 0; b < count; b++) {
+          glitchBands.push({
+            y:  Math.floor(Math.random() * h),
+            bh: 18 + Math.floor(Math.random() * 90),
+            dx: Math.round((Math.random() - 0.5) * w * 0.65),
+            dy: Math.round((Math.random() - 0.5) * h * 0.65),
+          });
+        }
+        glitchBandRefreshMs = now + 180 + Math.random() * 170; // hold 180–350ms
+      }
+      for (const { y, bh, dx, dy } of glitchBands) {
+        if (glitchVertical) {
+          ctx.drawImage(glitchFrozen, 0, y, w, bh, 0, y + dy, w, bh);
+        } else {
+          ctx.drawImage(glitchFrozen, 0, y, w, bh, dx, y, w, bh);
+        }
+      }
+    };
+
+    // Mid-glitch: hold frozen bands until glitchEndMs
+    if (now < glitchEndMs) {
+      drawBase();
+      drawBands();
+      return;
+    }
+
+    // Between glitches: show current base effect, wait for next event
+    if (now < glitchNextMs) {
+      drawBase();
+      return;
+    }
+
+    // New glitch event: freeze current frame, render, schedule next
+    if (!glitchFrozen) glitchFrozen = document.createElement('canvas');
+    glitchFrozen.width = w; glitchFrozen.height = h;
+    glitchFrozen.getContext('2d').drawImage(src, 0, 0, w, h);
+    drawBase();
+    drawBands();
+
+    // Quantize to bar boundaries using Transport position so glitch start/end
+    // snap to the rhythm grid rather than firing at arbitrary wall-clock offsets.
+    const barMs = (60000 / Math.max(S.bpm, 40)) * 4;
+    const pos      = Tone.Transport.position.split(':').map(Number);
+    const beatFrac = pos[1] + pos[2] / 4;               // beats elapsed in current bar
+    const msToBar  = (4 - beatFrac) * (60000 / Math.max(S.bpm, 40)); // ms to next bar
+    const glitchBars = 1 + Math.floor(Math.random() * 2); // 1 or 2 full bars
+    const pauseBars  = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3 full bars
+    // End snaps to a bar boundary: next bar + (glitchBars-1) more bars
+    glitchEndMs  = now + msToBar + barMs * (glitchBars - 1);
+    // Next event also snaps: glitch end + N full bars
+    glitchNextMs = glitchEndMs + barMs * pauseBars;
+
+    // Pick a new base and direction randomly for the next inter-glitch window
+    const bases = ['none', 'contrast', 'invert', 'hue', 'scan', 'chroma'];
+    glitchBase     = bases[Math.floor(Math.random() * bases.length)];
+    glitchVertical = Math.random() < 0.5;
+    return;
+  }
+
+  if (activeEffect === 'chroma') {
+    // RGB channel separation at 1/4 resolution for performance
+    if (!fxScratch) fxScratch = document.createElement('canvas');
+    const S = 4;
+    fxScratch.width  = Math.ceil(w / S);
+    fxScratch.height = Math.ceil(h / S);
+    const sc  = fxScratch.getContext('2d');
+    sc.drawImage(src, 0, 0, fxScratch.width, fxScratch.height);
+    const sw = fxScratch.width, sh = fxScratch.height;
+    const src_ = sc.getImageData(0, 0, sw, sh);
+    const out  = sc.createImageData(sw, sh);
+    const sd = src_.data, od = out.data;
+    const shift = 4; // pixels at 1/4 res = ~16px at full res
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const di = (y * sw + x) * 4;
+        const rx = Math.min(x + shift, sw - 1);
+        const bx = Math.max(x - shift, 0);
+        od[di]   = sd[(y * sw + rx) * 4];     // red shifted right
+        od[di+1] = sd[di + 1];                 // green unchanged
+        od[di+2] = sd[(y * sw + bx) * 4 + 2]; // blue shifted left
+        od[di+3] = 255;
+      }
+    }
+    sc.putImageData(out, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(fxScratch, 0, 0, w, h);
+    return;
+  }
+
+  // none (default)
+  ctx.drawImage(src, 0, 0, w, h);
+}
+const testImgEl    = new Image();
+let testImgReady   = false;
+let testCycleTimer = null;
+
+function loadTestImage(idx) {
+  testImgIdx = ((idx % testImages.length) + testImages.length) % testImages.length;
+  testImgReady = false;
+  testImgEl.onload = () => { testImgReady = true; };
+  testImgEl.src = testImages[testImgIdx].url;
+  document.getElementById('testFilename').textContent = testImages[testImgIdx].name;
+  document.getElementById('testCounter').textContent  = `${testImgIdx + 1} / ${testImages.length}`;
+  // Reset smoothed state so the fresh image gets a clean read
+  S.smoothMotion = 0; S.smoothBright = 128;
+}
+
+function startTestCycle() {
+  stopTestCycle();
+  const ms = parseInt(document.getElementById('testDwell').value, 10);
+  testCycleTimer = setInterval(() => loadTestImage(testImgIdx + 1), ms);
+}
+function stopTestCycle() {
+  if (testCycleTimer) { clearInterval(testCycleTimer); testCycleTimer = null; }
+}
+
+// ── COLOR HELPERS ────────────────────────────────────────────────────────────
+function rgbHue(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (!d) return 0;
+  let h;
+  if      (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else               h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+function rgbSat(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx === mn) return 0;
+  const l = (mx + mn) / 2;
+  return (mx - mn) / (1 - Math.abs(2 * l - 1));
+}
+
+// ── FRAME ANALYSIS ───────────────────────────────────────────────────────────
+function analyzeFrame() {
+  // Downsample the display canvas (post-effect) into the small analysis canvas
+  actx.drawImage(canvas, 0, 0, AW, AH);
+  const { data: px } = actx.getImageData(0, 0, AW, AH);
+
+  const cW = AW / GRID, cH = AH / GRID;
+
+  // Per-cell accumulators
+  const stripSum   = new Float32Array(STEPS);
+  const stripCount = new Float32Array(STEPS);
+  const cBr = new Float32Array(16); // brightness sum
+  const cHu = new Float32Array(16); // hue sum (saturated pixels only)
+  const cMo = new Float32Array(16); // motion sum
+  const cN  = new Float32Array(16); // pixel count
+  const cHN = new Float32Array(16); // saturated pixel count (for hue avg)
+  // 12-bucket hue histogram (30 deg each) for dominant hue detection
+  const hHist = new Float32Array(12);
+
+  let totBr = 0, totMot = 0, totN = 0, satSum = 0, satN = 0;
+
+  for (let y = 0; y < AH; y++) {
+    for (let x = 0; x < AW; x++) {
+      const i   = (y * AW + x) * 4;
+      const r   = px[i], g = px[i+1], b = px[i+2];
+      const col = Math.min((x / cW) | 0, GRID - 1);
+      const row = Math.min((y / cH) | 0, GRID - 1);
+      const ci  = row * GRID + col;
+      const br  = (r + g + b) / 3;
+      grayBuf[y * AW + x] = br;  // kept for texture analysis pass
+
+      cBr[ci] += br; cN[ci]++;
+      totBr += br;   totN++;
+      const sIdx = Math.min((x / AW * STEPS) | 0, STEPS - 1);
+      stripSum[sIdx] += br; stripCount[sIdx]++;
+
+      // Only count saturated pixels toward hue (grays are uninformative)
+      const sat = rgbSat(r, g, b);
+      if (sat > 0.2) {
+        const h = rgbHue(r, g, b);
+        cHu[ci] += h; cHN[ci]++;
+        hHist[(h / 30) | 0]++;
+        satSum += sat; satN++;
+      }
+
+      // Frame diff for motion
+      if (prevPx) {
+        const d = (Math.abs(r - prevPx[i]) +
+                   Math.abs(g - prevPx[i+1]) +
+                   Math.abs(b - prevPx[i+2])) / 3;
+        cMo[ci] += d; totMot += d;
+      }
+    }
+  }
+
+  // Swap double buffer (copy current pixels without new allocation)
+  currBuf.set(px);
+  prevPx  = currBuf;
+  currBuf = currBuf === bufA ? bufB : bufA;
+
+  // Normalize accumulators into state
+  for (let c = 0; c < 16; c++) {
+    const n = cN[c] || 1;
+    S.cellBright[c] = cBr[c] / n;
+    S.cellMotion[c] = cMo[c] / n;
+    // Fall back to scene dominant hue for desaturated cells
+    S.cellHue[c] = cHN[c] > 0 ? cHu[c] / cHN[c] : S.domHue;
+  }
+  S.totalMotion = totMot / (totN || 1);
+
+  // Dominant hue: find peak bucket, smooth with EMA
+  let mxBk = 0, mxV = 0;
+  for (let i = 0; i < 12; i++) if (hHist[i] > mxV) { mxV = hHist[i]; mxBk = i; }
+  S.domHue = S.domHue * 0.93 + (mxBk * 30 + 15) * 0.07;
+  S.avgSat = satN > 0 ? satSum / satN : 0;
+
+  // ── Chord selection ────────────────────────────────────────────────────────
+  // Candidate updates every frame; chord commits only when stable for ~3s OR
+  // a motion spike is detected (scene cut / big gesture).
+  const candidate = pickChord(S.domHue, S.overallBright, S.avgSat);
+  if (candidate !== S.chordCandidate) {
+    S.chordCandidate   = candidate;
+    S.chordStableCount = 0;
+  } else {
+    S.chordStableCount = Math.min(S.chordStableCount + 1, 120);
+  }
+
+  // Motion spike = totalMotion is 2.5× the recent smoothed average (and non-trivial)
+  const motionSpike = S.smoothMotion > 2 && S.totalMotion > S.smoothMotion * 2.5;
+  S.smoothMotion = S.smoothMotion * 0.92 + S.totalMotion * 0.08;
+
+  const chordChanged = candidate !== S.chordName;
+  if (chordChanged && (motionSpike || S.chordStableCount >= 90)) {
+    S.chordName = candidate;
+    S.arpNotes  = buildArpNotes(candidate);
+  }
+  if (motionSpike) {
+    // Scene change → new arpeggio pattern (pick any except the current one)
+    S.arpPatternIdx = (S.arpPatternIdx + 1 + Math.floor(Math.random() * (ARP_PATTERNS.length - 1))) % ARP_PATTERNS.length;
+  }
+
+  // Derive melody scale from chord so they're always harmonically coherent
+  S.scaleName = chordToScale(S.chordName);
+
+  // 16-strip brightness profile (spatial rhythm pattern from image)
+  let sMean = 0;
+  for (let s = 0; s < STEPS; s++) {
+    S.stripBright[s] = stripSum[s] / (stripCount[s] || 1);
+    sMean += S.stripBright[s];
+  }
+  S.stripMean = sMean / STEPS;
+  let sVar = 0;
+  for (let s = 0; s < STEPS; s++) sVar += (S.stripBright[s] - S.stripMean) ** 2;
+  S.stripStd = Math.sqrt(sVar / STEPS) || 1; // never zero
+
+  // Overall brightness drives tempo for everything (drums + melody stay in sync)
+  const overBr = totBr / (totN || 1);
+  S.overallBright = overBr;
+  const tCurve = (overBr / 255) ** 2; // quad-in: leans toward lower BPM in normal light
+  S.bpm = S.bpm * 0.96 + (BPM_LO + tCurve * (BPM_HI - BPM_LO)) * 0.04;
+  Tone.Transport.bpm.value = S.bpm;
+
+  // Brightness spike detection → drum fill
+  // A "burst of light" is when brightness jumps well above its recent smoothed average.
+  // Gate: at least one measure (or 1.5s, whichever is longer) must pass between fills.
+  const brightDelta = S.overallBright - S.smoothBright;
+  S.smoothBright = S.smoothBright * 0.88 + S.overallBright * 0.12;
+  const measureSecs = 4 * 60 / Math.max(S.bpm, 1);
+  if (brightDelta > 25 && (Tone.Transport.seconds - S.lastFillTime) > Math.max(measureSecs, 1.5)) {
+    S.triggerFill  = true;
+    S.lastFillTime = Tone.Transport.seconds;
+  }
+
+  // ── Beat style selection ───────────────────────────────────────────────────
+  const tNow = Math.max(0, Math.min(1, (S.bpm - BPM_LO) / (BPM_HI - BPM_LO)));
+  const beatCand = pickBeatStyle(tNow, S.totalMotion, S.domHue, S.avgSat);
+  if (beatCand !== S.beatCandidate) {
+    S.beatCandidate   = beatCand;
+    S.beatStableCount = 0;
+  } else {
+    S.beatStableCount = Math.min(S.beatStableCount + 1, 60);
+  }
+  // Queue style change at next bar boundary after ~2s stability (~50 frames @ 30fps)
+  if (S.beatStableCount >= 50 && beatCand !== S.beatStyle) {
+    S.pendingBeatStyle = beatCand;
+  }
+
+  // ── Bass filter mode ───────────────────────────────────────────────────────
+  if (bFilt) updateBassMode(tNow, S.domHue, S.avgSat);
+
+  // ── Texture analysis (every 5 frames — ~6 updates/sec at 30fps) ────────────
+  analyzeFrameCount++;
+  if (analyzeFrameCount % 5 === 0) computeTextureFeatures(px);
+}
+
+// ── TEXTURE ANALYSIS ─────────────────────────────────────────────────────────
+// Called every 5 frames. Reads grayBuf (filled in the main loop) and px (RGBA).
+// Fills S.tex* fields consumed by the sequencer and pickBeatStyle.
+
+// LBP clockwise neighbor offsets (right → up-right → up → ... → down-right)
+const LBP_DX = [ 1, 1, 0,-1,-1,-1, 0, 1];
+const LBP_DY = [ 0,-1,-1,-1, 0, 1, 1, 1];
+
+function computeTextureFeatures(px) {
+  const W = AW, H = AH;
+
+  // ── 1. Sobel → edge density, direction entropy (geometric), run-length ─────
+  const dirBins = new Float32Array(8); // 45°-wide orientation bins
+  const EDGE_THRESH = 18;
+  let edgePx = 0, totalPx = 0;
+  let runSum = 0, runCount = 0, currentRun = 0;
+
+  for (let y = 1; y < H - 1; y++) {
+    currentRun = 0;
+    for (let x = 1; x < W - 1; x++) {
+      const gx =
+        -grayBuf[(y-1)*W+(x-1)] - 2*grayBuf[y*W+(x-1)] - grayBuf[(y+1)*W+(x-1)]
+        +grayBuf[(y-1)*W+(x+1)] + 2*grayBuf[y*W+(x+1)] + grayBuf[(y+1)*W+(x+1)];
+      const gy =
+        -grayBuf[(y-1)*W+(x-1)] - 2*grayBuf[(y-1)*W+x] - grayBuf[(y-1)*W+(x+1)]
+        +grayBuf[(y+1)*W+(x-1)] + 2*grayBuf[(y+1)*W+x] + grayBuf[(y+1)*W+(x+1)];
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      totalPx++;
+      if (mag > EDGE_THRESH) {
+        edgePx++;
+        dirBins[Math.floor(((Math.atan2(gy, gx) + Math.PI) / (2 * Math.PI)) * 8) % 8] += mag;
+        currentRun++;
+      } else {
+        if (currentRun > 1) { runSum += currentRun; runCount++; }
+        currentRun = 0;
+      }
+    }
+    if (currentRun > 1) { runSum += currentRun; runCount++; }
+  }
+
+  const rawEdgeDensity = totalPx > 0 ? edgePx / totalPx : 0;
+
+  // Direction entropy: 0 = single dominant angle (geometric), 3.0 = all equal (organic)
+  let dirTotal = 0;
+  for (let i = 0; i < 8; i++) dirTotal += dirBins[i];
+  let entropy = 0;
+  if (dirTotal > 0) {
+    for (let i = 0; i < 8; i++) {
+      if (dirBins[i] > 0) { const p = dirBins[i] / dirTotal; entropy -= p * Math.log2(p); }
+    }
+  }
+  // Geometric = low entropy + some edges present (flat image has no edges to be geometric)
+  const rawGeometric = rawEdgeDensity > 0.02 ? Math.max(0, 1 - entropy / 3.0) : 0;
+  // Mean run-length: longer straight runs → more linear/architectural
+  const rawLinearity = runCount > 0 ? Math.min((runSum / runCount) / 15, 1) : 0;
+
+  // ── 2. Local Binary Patterns → texture complexity ──────────────────────────
+  let uniformCount = 0, lbpTotal = 0;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const c = grayBuf[y * W + x];
+      let code = 0;
+      for (let k = 0; k < 8; k++) {
+        if (grayBuf[(y + LBP_DY[k]) * W + (x + LBP_DX[k])] >= c) code |= (1 << k);
+      }
+      let transitions = 0;
+      for (let k = 0; k < 8; k++) {
+        if (((code >> k) & 1) !== ((code >> ((k + 1) % 8)) & 1)) transitions++;
+      }
+      if (transitions <= 2) uniformCount++; // uniform = smooth/structured local region
+      lbpTotal++;
+    }
+  }
+  // High non-uniformity = complex organic texture
+  const rawComplexity = lbpTotal > 0 ? 1 - (uniformCount / lbpTotal) : 0;
+
+  // ── 3. Row autocorrelation → periodicity ──────────────────────────────────
+  let maxCorr = 0;
+  for (const row of [H >> 2, H >> 1, (3 * H) >> 2]) {
+    const base = row * W;
+    let mean = 0;
+    for (let x = 0; x < W; x++) mean += grayBuf[base + x];
+    mean /= W;
+    let variance = 0;
+    for (let x = 0; x < W; x++) variance += (grayBuf[base + x] - mean) ** 2;
+    variance /= W;
+    if (variance < 10) continue;
+    for (const lag of [4, 8, 16, 24, 32]) {
+      let corr = 0;
+      const n = W - lag;
+      for (let x = lag; x < W; x++) corr += (grayBuf[base + x] - mean) * (grayBuf[base + x - lag] - mean);
+      maxCorr = Math.max(maxCorr, Math.max(0, corr / (n * variance)));
+    }
+  }
+  const rawPeriodic = Math.min(maxCorr, 1);
+
+  // ── 4. Local 4×4 block variance → fine-texture measure ────────────────────
+  let localVarSum = 0, localVarN = 0;
+  for (let by = 0; by + 4 <= H; by += 4) {
+    for (let bx = 0; bx + 4 <= W; bx += 4) {
+      let s = 0, s2 = 0;
+      for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) {
+        const v = grayBuf[(by + dy) * W + (bx + dx)];
+        s += v; s2 += v * v;
+      }
+      localVarSum += s2 / 16 - (s / 16) ** 2;
+      localVarN++;
+    }
+  }
+  const rawFine = localVarN > 0 ? Math.min(localVarSum / localVarN / 800, 1) : 0;
+
+  // ── 5. Hue cluster count → color complexity ────────────────────────────────
+  const hueBuckets = new Uint16Array(12);
+  for (let y = 0; y < H; y += 2) {
+    for (let x = 0; x < W; x += 2) {
+      const i = (y * W + x) * 4;
+      const r = px[i], g = px[i+1], b = px[i+2];
+      const mx = Math.max(r,g,b), mn = Math.min(r,g,b);
+      if (mx < 30 || mx === mn) continue;
+      const l = (mx + mn) / 510;
+      if ((mx - mn) / 255 / (1 - Math.abs(2*l - 1)) < 0.25) continue;
+      hueBuckets[(rgbHue(r, g, b) / 30) | 0]++;
+    }
+  }
+  const minPx = (W * H / 4) * 0.025;
+  const rawClusters = hueBuckets.reduce((n, b) => n + (b > minPx ? 1 : 0), 0);
+
+  // ── EMA smoothing → S ──────────────────────────────────────────────────────
+  const A = 0.15;
+  S.texGeometric    = S.texGeometric    * (1-A) + rawGeometric    * A;
+  S.texComplexity   = S.texComplexity   * (1-A) + rawComplexity   * A;
+  S.texPeriodic     = S.texPeriodic     * (1-A) + rawPeriodic     * A;
+  S.texEdgeDensity  = S.texEdgeDensity  * (1-A) + rawEdgeDensity  * A;
+  S.texFine         = S.texFine         * (1-A) + rawFine         * A;
+  S.texLinearity    = S.texLinearity    * (1-A) + rawLinearity     * A;
+  S.texColorClusters = Math.round(S.texColorClusters * 0.8 + rawClusters * 0.2);
+}
+
+// Derive a human-readable texture label from the current S.tex* signals
+function textureLabel() {
+  const { texEdgeDensity: e, texPeriodic: p, texGeometric: g,
+          texComplexity: c, texFine: f, texLinearity: l } = S;
+  if (e < 0.03)              return 'SMOOTH';
+  if (p > 0.60)              return 'PERIODIC';
+  if (g > 0.58 && l > 0.38) return 'GEOMETRIC';
+  if (c > 0.65 && f > 0.42) return 'ORGANIC';
+  if (f > 0.58)              return 'TEXTURED';
+  if (c > 0.58)              return 'COMPLEX';
+  return 'MIXED';
+}
+
+// ── AUDIO SETUP ──────────────────────────────────────────────────────────────
+let melody, bass, kick, hihat, snare;
+let bFilt, bassDelay, bassDistort, bassChorus, technoPhaser;
+let reverb, hallReverb, ppDelay, melodyChorus, melodyVibrato;
+let ambientAutoFilter;
+let organ, woodwind, ambientPad, ambientTremolo;
+let ambientBassNote, ambientSparkle;
+let masterComp, ambientDryGain, drumBus;
+let currentBassMode = '';
+let currentGenre = 'techno';
+let melodyNote = '4n'; // current melody subdivision (for HUD)
+
+// ── SONG STRUCTURE ───────────────────────────────────────────────────────────
+// Four cycling "parts" that modulate intensity across the whole piece.
+// vel  = velocity multiplier (0–1) applied to all note triggers
+// gate = gate-open probability multiplier applied to melody/sparse events
+const SONG_PARTS = [
+  { name: 'intro', measures: 8,  vel: 0.40, gate: 0.30 },
+  { name: 'build', measures: 12, vel: 0.70, gate: 0.65 },
+  { name: 'peak',  measures: 16, vel: 1.00, gate: 1.00 },
+  { name: 'break', measures: 8,  vel: 0.50, gate: 0.42 },
+];
+let songPartIdx     = 1; // start at 'build' so melody is immediately audible
+let songPartMeasure = 0;
+
+function applyBassMode(mode) {
+  if (mode === currentBassMode) return;
+  currentBassMode = mode;
+  const R = 0.4; // ramp time in seconds (smooth transition, no clicks)
+  switch (mode) {
+    case 'echo':
+      // Dub-style delay — wide open filter so echoes ring out clearly
+      bassDelay.wet.rampTo(0.72, R);   bassDistort.wet.rampTo(0, R);
+      bassChorus.wet.rampTo(0, R);     bFilt.frequency.rampTo(900, R); break;
+    case 'distort':
+      // Heavy fuzz — full distortion with a touch of delay for grit; wide-open filter
+      bassDelay.wet.rampTo(0.22, R);   bassDistort.wet.rampTo(0.98, R);
+      bassChorus.wet.rampTo(0, R);     bFilt.frequency.rampTo(2600, R); break;
+    case 'clean':
+      // Tight and dry — moderate filter, no fx
+      bassDelay.wet.rampTo(0, R);      bassDistort.wet.rampTo(0, R);
+      bassChorus.wet.rampTo(0, R);     bFilt.frequency.rampTo(800, R); break;
+    case 'sparkle':
+      // Wide chorus shimmer — filter fully open so chorus effect is bright
+      bassDelay.wet.rampTo(0.18, R);   bassDistort.wet.rampTo(0, R);
+      bassChorus.wet.rampTo(0.9, R);   bFilt.frequency.rampTo(3000, R); break;
+  }
+}
+
+function updateBassMode(t, domHue, avgSat) {
+  // Primary colors (saturated reds, yellows, greens, blues) → sparkle
+  const isPrimary = avgSat > 0.55 && (
+    domHue < 40 || domHue > 330 ||
+    (domHue > 50  && domHue < 80) ||
+    (domHue > 100 && domHue < 160) ||
+    (domHue > 210 && domHue < 260)
+  );
+  if (isPrimary)  { applyBassMode('sparkle'); return; }
+  if (t < 0.33)    applyBassMode('echo');
+  else if (t < 0.66) applyBassMode('distort');
+  else             applyBassMode('clean');
+}
+
+function setGenre(name) {
+  const p = GENRE_PRESETS[name];
+  if (!p || !melody) return;
+
+  const prevGenre = currentGenre;
+  currentGenre = name;
+
+  const R = 3.5; // crossfade duration in seconds
+
+  // Release held chords — they tail off through their natural release envelope + reverb.
+  melody.releaseAll();
+  organ.releaseAll();
+
+  // Set oscillator type for new notes.
+  const melOsc  = typeof p.melodyOsc === 'string' ? { type: p.melodyOsc } : p.melodyOsc;
+  const bassOsc = typeof p.bassOsc   === 'string' ? { type: p.bassOsc   } : p.bassOsc;
+  bass.set({ oscillator: bassOsc, envelope: p.bassEnv });
+
+  // ── Seed new genre's sustained notes immediately with a forced-slow attack ─
+  // Only when actually changing genre (not on init or re-clicking the same genre).
+  // The slow attack ensures new notes are in sustain phase by the time they're
+  // audible; the sustain loop restores the real envelope on its next fire.
+  const SEED_ATTACK = 1.5;
+  melody.set({ oscillator: melOsc, envelope: { ...p.melodyEnv, attack: SEED_ATTACK } });
+
+  if (name !== prevGenre && Tone.Transport.state === 'started') {
+    const now = Tone.now();
+    if (name === 'techno') {
+      S.arpNotes.slice(0, 3).forEach((note, i) => {
+        const high = note.replace(/\d+$/, oct => String(+oct + 2));
+        melody.triggerAttack(high, now + i * 0.04, 0.55);
+      });
+    } else if (name === 'orchestral') {
+      S.arpNotes.slice(0, 3).forEach((note, i) => {
+        const str = note.replace(/\d+$/, oct => String(+oct + 1));
+        melody.triggerAttack(str, now + i * 0.06, 0.52);
+      });
+    } else if (name === 'choir') {
+      S.arpNotes.slice(0, 3).forEach((note, i) => {
+        melody.triggerAttack(note, now + i * 0.08, 0.50);
+      });
+      S.arpNotes.forEach((note, i) => {
+        organ.triggerAttackRelease(note, '2m', now + i * 0.05, 0.45);
+      });
+    }
+    // Restore the real envelope after the seed attack has completed
+    setTimeout(() => {
+      if (currentGenre === name) melody.set({ envelope: p.melodyEnv });
+    }, SEED_ATTACK * 1000 + 200);
+  } else {
+    // Init call: apply real envelope immediately (no seed, no crossfade)
+    melody.set({ envelope: p.melodyEnv });
+  }
+
+  // Effects crossfade over R seconds.
+  reverb.wet.rampTo(p.reverbWet, R);
+  ppDelay.wet.rampTo(p.ppWet, R);
+  melodyChorus.wet.rampTo(p.chorusWet, R);
+  hallReverb.wet.rampTo(p.hallWet, R);
+  ambientAutoFilter.wet.rampTo(p.autoFilterWet, R);
+  technoPhaser.wet.rampTo(p.phaserWet, R);
+  drumBus.wet.rampTo(name === 'techno' ? 0.75 : 0, R);
+  melodyVibrato.wet.rampTo(p.vibratoWet, R);
+  melodyVibrato.depth.rampTo(p.vibratoDepth, R);
+  melodyVibrato.frequency.value = p.vibratoFreq;
+
+  // All volumes ramp simultaneously — old genre fades out, new fades in.
+  [
+    ['mxMelody', 'vMelody', melody,  p.vol.melody],
+    ['mxBass',   'vBass',   bass,    p.vol.bass],
+    ['mxKick',   'vKick',   kick,    p.vol.kick],
+    ['mxSnare',  'vSnare',  snare,   p.vol.snare],
+    ['mxHihat',  'vHihat',  hihat,   p.vol.hihat],
+  ].forEach(([sid, vid, inst, db]) => {
+    inst.volume.rampTo(db, R);
+    const s = document.getElementById(sid);
+    const v = document.getElementById(vid);
+    if (s) s.value = db;
+    if (v) v.textContent = db;
+  });
+  organ.volume.rampTo(p.vol.organ, R);
+  woodwind.volume.rampTo(p.vol.woodwind, R);
+  ambientPad.volume.rampTo(p.vol.ambientPad, R);
+  ambientBassNote.volume.rampTo(p.vol.ambientBassNote, R);
+  ambientSparkle.volume.rampTo(p.vol.ambientSparkle, R);
+
+  // Seed ambient pad so it doesn't wait up to one bar for the sustain loop.
+  if (name === 'ambient' && Tone.Transport.state === 'started') {
+    Tone.Transport.scheduleOnce((time) => {
+      ambientPad.releaseAll(time);
+      S.arpNotes.forEach((note, i) => {
+        ambientPad.triggerAttack(note, time + i * 0.12, Math.max(0.65 - i * 0.1, 0.28));
+      });
+    }, '+0.5');
+  }
+}
+
+async function initAudio() {
+  await Tone.start();
+
+  // Master chain: reverb + hall reverb -> compressor -> limiter -> out
+  // Compressor with makeup gain brings up quiet ambient/choir layers
+  // while the limiter prevents clipping.
+  reverb = new Tone.Reverb({ decay: 2.5, wet: 0.28 });
+  await reverb.generate();
+  hallReverb = new Tone.Reverb({ decay: 5.5, wet: 0 });
+  await hallReverb.generate();
+  const limiter = new Tone.Limiter(-1).toDestination();
+  masterComp = new Tone.Compressor({
+    threshold: -22, ratio: 4, attack: 0.008, release: 0.22, knee: 8,
+  }).connect(limiter);
+  reverb.connect(masterComp);
+  hallReverb.connect(masterComp);
+  // Dry anchor for ambientPad: bypasses reverb smearing, provides presence
+  ambientDryGain = new Tone.Gain({ gain: 0.28 }).connect(masterComp);
+  // Drum bus: hard-clip Distortion gives NES-style crunch in techno; wet=0 in other genres
+  drumBus = new Tone.Distortion({ distortion: 0.92, oversample: '4x', wet: 0 });
+  drumBus.connect(reverb);
+  drumBus.connect(masterComp);
+
+  // Ping-pong delay on melody for stereo movement
+  ppDelay = new Tone.PingPongDelay({ delayTime: '8n', feedback: 0.22, wet: 0.28 }).connect(reverb);
+
+  // Chorus on melody (starts dry; genres activate it)
+  melodyChorus = new Tone.Chorus({ frequency: 3, delayTime: 3.5, depth: 0.6, wet: 0 }).start().connect(ppDelay);
+
+  // Vibrato on melody (starts dry; choir/strings activate it for natural pitch wavering)
+  melodyVibrato = new Tone.Vibrato({ frequency: 5, depth: 0.04, wet: 0 }).connect(melodyChorus);
+
+  // Melody: soft triangle waves, generous release
+  // Chain: melody → vibrato → chorus → ppDelay → reverb; also feeds hallReverb
+  melody = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 4,
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.05, decay: 0.3, sustain: 0.1, release: 1.5 },
+    volume: -12,
+  }).connect(melodyVibrato).connect(hallReverb);
+
+  // Bass: sawtooth → delay → distort → phaser → chorus → filter → reverb
+  bFilt       = new Tone.Filter({ frequency: 550, type: 'lowpass', rolloff: -24 }).connect(reverb);
+  bassChorus  = new Tone.Chorus({ frequency: 4, delayTime: 2.5, depth: 0.7, wet: 0 }).start().connect(bFilt);
+  technoPhaser = new Tone.Phaser({ frequency: 2, octaves: 4, baseFrequency: 300, wet: 0 }).connect(bassChorus);
+  bassDistort = new Tone.Distortion({ distortion: 0.90, wet: 0 }).connect(technoPhaser);
+  bassDelay   = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.45, wet: 0 }).connect(bassDistort);
+  bass = new Tone.Synth({
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.01, decay: 0.2, sustain: 0.45, release: 0.5 },
+    volume: -10,
+  }).connect(bassDelay);
+
+  // Kick drum
+  kick = new Tone.MembraneSynth({
+    pitchDecay: 0.08, octaves: 7,
+    envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.1 },
+    volume: -5,
+  }).connect(drumBus);
+
+  // Metallic hi-hat
+  hihat = new Tone.MetalSynth({
+    frequency: 500, harmonicity: 5.1, modulationIndex: 32,
+    resonance: 4000, octaves: 1.5,
+    envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
+    volume: -12,
+  }).connect(drumBus);
+
+  // Noise snare
+  snare = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.14, sustain: 0, release: 0.05 },
+    volume: -14,
+  }).connect(drumBus);
+
+  // ── Genre-specific instruments (all start silent) ────────────────────────
+
+  // Organ: sustained drawbar-like chords for choir mode.
+  // fatsquare uses multiple detuned square waves → thick, organlike harmonics.
+  organ = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 8,
+    oscillator: { type: 'fatsquare', spread: 22, count: 3 },
+    envelope:   { attack: 0.06, decay: 0, sustain: 1.0, release: 0.5 },
+    volume: -36,
+  }).connect(reverb).connect(hallReverb);
+
+  // Woodwind: flute/piccolo countermelody for orchestral mode.
+  // fatsine with narrow spread sounds breathy and flute-like.
+  woodwind = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 3,
+    oscillator: { type: 'fatsine', spread: 6, count: 2 },
+    envelope:   { attack: 0.05, decay: 0.18, sustain: 0.32, release: 1.4 },
+    volume: -36,
+  }).connect(ppDelay);
+
+  // Ambient pad: triangle waves bloom through autoFilter → tremolo.
+  // fattriangle gives richer harmonics than fatsine — much more perceived loudness
+  // at the same dB level. Tremolo depth trimmed to 0.25 so the pad never dips
+  // low enough to disappear. ambientDryGain provides a parallel direct path to
+  // the master compressor, anchoring the sound in presence while reverb adds wash.
+  ambientTremolo = new Tone.Tremolo({ frequency: 0.75, depth: 0.25, spread: 180, wet: 0.65 })
+    .start().connect(reverb).connect(ambientDryGain);
+  ambientAutoFilter = new Tone.AutoFilter({
+    frequency: 0.15, baseFrequency: 400, octaves: 2.2, wet: 0,
+  }).start().connect(ambientTremolo);
+  ambientPad = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 8,
+    oscillator: { type: 'fattriangle', spread: 22, count: 3 },
+    envelope:   { attack: 0.7, decay: 0.5, sustain: 0.85, release: 4.5 },
+    volume: -36,
+  }).connect(ambientAutoFilter);
+
+  // Ambient sparse bass — occasional deep root notes with long decay
+  ambientBassNote = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope:   { attack: 0.8, decay: 0.6, sustain: 0.6, release: 5.0 },
+    volume: -36,
+  }).connect(reverb);
+
+  // Ambient sparkle — polyphonic bell-like plucks triggered by bright image cells
+  ambientSparkle = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 6,
+    oscillator: { type: 'triangle' },
+    envelope:   { attack: 0.005, decay: 0.45, sustain: 0.0, release: 2.8 },
+    volume: -36,
+  }).connect(reverb);
+}
+
+// ── SEQUENCER ────────────────────────────────────────────────────────────────
+// Two separate loops on a fixed 100 BPM transport:
+//
+//  DRUM LOOP ('16n') — always fires; no motion or brightness conditions on timing.
+//    Kick:  every quarter beat (steps 0,4,8,12) + extra hits on bright image strips
+//    Snare: beats 2 & 4 (steps 4, 12) always
+//    Hi-hat: every 8th note (even steps) always; strip brightness shapes velocity
+//    Strip brightness of each step's horizontal band modulates velocity for all drums,
+//    so the spatial image pattern is always imprinted on the groove.
+//
+//  MELODY/BASS LOOP ('8n') — also always fires, but an internal subdivision counter
+//    gates when notes actually play. The subdivision is derived from brightness:
+//      bright (>75%)  → fires every 8th note  (2× the quarter pulse)
+//      medium (45-75%)→ fires every quarter    (1× the quarter pulse)
+//      dim (20-45%)   → fires every half note  (½×)
+//      dark (<20%)    → fires every whole note (¼×)
+//    This keeps melody always an integer multiple of the drum pulse → always in sync.
+//    Bass plays unconditionally on every melody fire; melody notes are motion-gated.
+function startSequencer() {
+  Tone.Transport.bpm.value = S.bpm; // initial value; analyzeFrame() updates it each frame
+
+  // ── Drum loop ──────────────────────────────────────────────────────────────
+  let drumStep = 0;
+
+  Tone.Transport.scheduleRepeat((time) => {
+    // Commit pending beat style at the top of each measure
+    if (drumStep === 0 && S.pendingBeatStyle) {
+      S.beatStyle        = S.pendingBeatStyle;
+      S.pendingBeatStyle = null;
+    }
+    // Advance song part at measure boundaries
+    if (drumStep === 0) {
+      songPartMeasure++;
+      if (songPartMeasure >= SONG_PARTS[songPartIdx].measures) {
+        songPartMeasure = 0;
+        songPartIdx = (songPartIdx + 1) % SONG_PARTS.length;
+      }
+    }
+
+    seqStep = drumStep;
+    const sp        = SONG_PARTS[songPartIdx];
+    const normStrip = (S.stripBright[drumStep] - S.stripMean) / (S.stripStd || 1);
+    const motBoost  = Math.min(S.totalMotion / 60, 0.3);
+    const t = Math.max(0, Math.min(1, (S.bpm - BPM_LO) / (BPM_HI - BPM_LO)));
+    const isAccent  = drumStep % 4 === 0;
+    const dimFactor = 0.5 + 0.5 * Math.min(S.overallBright / 128, 1.0);
+
+    // ── Orchestral mode: woodwind countermelody replaces drums ─────────────────
+    if (currentGenre === 'orchestral') {
+      if (isAccent && S.stripBright[drumStep] > S.stripMean * 0.75) {
+        const scale   = SCALES[S.scaleName];
+        const noteIdx = Math.min(5 + ((drumStep / 4 | 0) % 2), scale.length - 1);
+        woodwind.triggerAttackRelease(scale[noteIdx], '8n', time,
+          Math.min(0.28 + S.totalMotion / 80, 0.58) * dimFactor * sp.vel);
+      } else if (normStrip > 0.75 && drumStep % 2 === 1 && t > 0.35) {
+        const scale   = SCALES[S.scaleName];
+        const noteIdx = Math.min(4 + (drumStep % 3), scale.length - 1);
+        woodwind.triggerAttackRelease(scale[noteIdx], '16n', time, 0.16 * dimFactor * sp.vel);
+      }
+      drumStep = (drumStep + 1) % STEPS;
+      return;
+    }
+
+    // ── Ambient mode: no percussion at all ─────────────────────────────────────
+    if (currentGenre === 'ambient') {
+      drumStep = (drumStep + 1) % STEPS;
+      return;
+    }
+
+    const pattern = BEAT_PATTERNS[S.beatStyle] || BEAT_PATTERNS.standard;
+
+    // Kick ─────────────────────────────────────────────────────────────────────
+    if (pattern.kick.includes(drumStep)) {
+      const vel = isAccent
+        ? Math.min(0.65 + motBoost, 1.0)
+        : Math.min(0.35 + t * 0.3 + motBoost, 0.85);
+      kick.triggerAttackRelease('C1', '16n', time, vel * dimFactor * sp.vel);
+    } else if (normStrip > 0.6 && t > 0.3 && sp.gate > 0.5) {
+      // Image-pattern syncopation: bright strips add ghost kicks at mid-high BPM
+      kick.triggerAttackRelease('C1', '16n', time, Math.min(0.22 + normStrip * 0.08, 0.48) * dimFactor * sp.vel);
+    }
+
+    // Snare ───────────────────────────────────────────────────────────────────
+    if (pattern.snare.includes(drumStep)) {
+      snare.triggerAttackRelease('16n', time, Math.min(0.45 + t * 0.3 + motBoost, 0.9) * dimFactor * sp.vel);
+    }
+
+    // Hi-hat ──────────────────────────────────────────────────────────────────
+    // In intro/break, thin out hi-hats to every other hit
+    if (pattern.hat.includes(drumStep) && (sp.gate > 0.5 || drumStep % 4 === 2)) {
+      const baseVel = 0.2 + Math.min(Math.max(normStrip + 1, 0) * 0.1, 0.28);
+      hihat.triggerAttackRelease('32n', time, Math.min(baseVel + motBoost * 0.5, 0.72) * dimFactor * sp.vel);
+    }
+
+    // Drum fill — triggered by a sudden brightness burst in analyzeFrame
+    if (S.triggerFill) {
+      S.triggerFill = false;
+      const t32 = Tone.Time('32n').toSeconds();
+      for (let i = 0; i < 6; i++) {
+        snare.triggerAttackRelease('32n', time + i * t32, Math.min(0.5 + i * 0.07, 0.92));
+      }
+      hihat.triggerAttackRelease('8n', time + 6 * t32, 0.95);
+    }
+
+    drumStep = (drumStep + 1) % STEPS;
+  }, '16n');
+
+  // ── Bass arpeggio loop ('16n') ─────────────────────────────────────────────
+  // Uses rotating 16-step rhythm patterns (BASS_RHYTHMS) to decide when notes
+  // fire, rather than a fixed chordDiv. The chord-note sequence (ARP_PATTERNS)
+  // advances only on active rhythm steps, so the groove changes while the
+  // harmonic content stays locked to the image. Pattern rotates every 4 bars.
+  let arpChordIdx = 0;
+  let arpFine16   = 0;
+
+  Tone.Transport.scheduleRepeat((time) => {
+    const sp     = SONG_PARTS[songPartIdx];
+    const step16 = arpFine16 % 16;
+    const t      = Math.max(0, Math.min(1, (S.bpm - BPM_LO) / (BPM_HI - BPM_LO)));
+
+    // ── Choir / Orchestral: bass follows the harmony, not the groove ───────────
+    // Plays one long note per measure from the chord tones, cycling root → fifth →
+    // root → third. This shadows the main instrument harmonically rather than
+    // driving an independent rhythm underneath it.
+    if (currentGenre === 'choir' || currentGenre === 'orchestral') {
+      if (step16 === 0) {
+        const measureIdx = Math.floor(arpFine16 / 16);
+        // root → fifth → root → third cycle (indices into arpNotes)
+        const seqMap  = [0, 2, 0, 1];
+        const noteIdx = seqMap[measureIdx % 4] % S.arpNotes.length;
+        const vel     = Math.min(0.35 + S.totalMotion / 180, 0.70) * sp.vel;
+        bass.triggerAttackRelease(S.arpNotes[noteIdx], '1m', time, vel);
+      }
+      arpFine16 = (arpFine16 + 1) % 64;
+      return;
+    }
+
+    // ── Techno / Ambient: rotate 16-step rhythm patterns every 4 bars ──────────
+    if (arpFine16 === 0) {
+      bassRhythmBar++;
+      if (bassRhythmBar % 4 === 0) {
+        let next;
+        do { next = Math.floor(Math.random() * BASS_RHYTHMS.length); }
+        while (next === bassRhythmIdx && BASS_RHYTHMS.length > 1);
+        bassRhythmIdx = next;
+      }
+    }
+
+    const rhythm = BASS_RHYTHMS[bassRhythmIdx];
+
+    if (rhythm[step16]) {
+      const isStrong = (step16 % 4 === 0);
+      let note;
+
+      // Strong beats always land on chord tones.
+      // Weak beats: 60% chord tone, 40% low-register scale tone for melodic variety.
+      if (isStrong || Math.random() < 0.60) {
+        const pattern = ARP_PATTERNS[S.arpPatternIdx];
+        const noteIdx = pattern[arpChordIdx % pattern.length] % S.arpNotes.length;
+        note = S.arpNotes[noteIdx];
+        arpChordIdx++;
+      } else {
+        // Scale walk: pick from the bottom 3 scale tones (stays in bass register)
+        const scale = SCALES[S.scaleName];
+        note = scale[Math.floor(Math.random() * 3)];
+        // don't advance arpChordIdx — resume chord sequence on next hit
+      }
+
+      // Occasional octave jump up for register variety (~10%)
+      if (!isStrong && Math.random() < 0.10) {
+        note = note.replace(/\d+$/, oct => String(parseInt(oct) + 1));
+      }
+
+      // Duration: hold until next active step
+      const remaining  = rhythm.slice(step16 + 1);
+      const nextOffset = remaining.findIndex(v => v);
+      const stepsHeld  = nextOffset >= 0 ? nextOffset + 1 : rhythm.length - step16;
+      const dur        = stepsHeld <= 1 ? '16n' : stepsHeld <= 2 ? '8n' : '4n';
+
+      const colIdx = step16 % GRID;
+      // Ghost notes: soft hits on weak beats for rhythmic texture (~18%)
+      const isGhost = (!isStrong && Math.random() < 0.18);
+      const vel = isGhost
+        ? (0.10 + Math.random() * 0.12) * sp.vel
+        : Math.min(0.32 + t * 0.48 + S.cellMotion[3 * GRID + colIdx] / 150, 0.95) * sp.vel;
+      bass.triggerAttackRelease(note, dur, time, vel);
+
+    } else if (rhythm[step16 + 1] && t > 0.3 && sp.gate > 0.4 && Math.random() < 0.32) {
+      // ── Chromatic approach note just before the next active step ────────
+      const pattern     = ARP_PATTERNS[S.arpPatternIdx];
+      const nextNoteIdx = pattern[arpChordIdx % pattern.length] % S.arpNotes.length;
+      const passNote    = semitoneLower(S.arpNotes[nextNoteIdx]);
+      bass.triggerAttackRelease(passNote, '32n', time, 0.24 * sp.vel);
+    }
+
+    arpFine16 = (arpFine16 + 1) % 64;
+  }, '16n');
+
+  // ── Melody loop ('8n') ────────────────────────────────────────────────────
+  // Motion-gated scale notes from the upper 3 grid rows.
+  // Firing rate adapts to brightness via mSubdiv (same as before).
+  let m8Step = 0;
+  let mSubdiv = 2;
+
+  Tone.Transport.scheduleRepeat((time) => {
+    const stepNow = m8Step;
+    const col     = stepNow % GRID;
+    const fires   = (stepNow % mSubdiv === 0);
+    m8Step        = (m8Step + 1) % 64;
+
+    const bright = S.overallBright / 255;
+    mSubdiv    = bright > 0.75 ? 1 : bright > 0.45 ? 2 : bright > 0.2 ? 4 : 8;
+    melodyNote = ['8n', '4n', '2n', '1n'][[1,2,4,8].indexOf(mSubdiv)];
+
+    // Techno: chord sustain loop drives the melody instrument; skip per-note firing
+    if (currentGenre === 'techno') return;
+
+    if (!fires) return;
+
+    const scale     = SCALES[S.scaleName];
+    const adaptGate = Math.max(3, M_GATE * (S.overallBright / 128));
+    const noteLen   = melodyNote;
+    // When the scene is essentially static, derive notes from brightness instead of
+    // motion so melody is always audible — the image's tonal pattern drives pitch.
+    const isStatic = S.totalMotion < 4;
+
+    for (let row = 0; row < 3; row++) {
+      const ci  = row * GRID + col;
+      const mot = S.cellMotion[ci];
+      const br  = S.cellBright[ci];
+
+      const sp = SONG_PARTS[songPartIdx];
+      let shouldPlay, vel;
+      // Orchestral woodwind fires more freely than other genres
+      const isOrch   = currentGenre === 'orchestral';
+      const gateBase = isOrch ? 0.68 : 0.42;
+
+      if (isStatic) {
+        if (br < 40) continue;
+        const densityBoost = 0.65 + S.texComplexity * 0.35;
+        if (Math.random() > gateBase * (br / 200) * densityBoost * sp.gate) continue;
+        shouldPlay = true;
+        vel = Math.min(0.28 + (br / 255) * 0.32, 0.65) * sp.vel;
+      } else {
+        if (mot < adaptGate * 0.6) continue;
+        if (Math.random() > Math.min(mot / (adaptGate * 3.5), 0.82) * sp.gate) continue;
+        shouldPlay = true;
+        vel = Math.min(0.28 + mot / 110, 0.82) * sp.vel;
+      }
+
+      if (!shouldPlay) continue;
+      const registerShift = S.texFine > 0.5 ? 1 : 0;
+      const base    = (2 - row) * 2 + 2 + registerShift;
+      const noteIdx = Math.min(base + ((br / 255) * 1.9 | 0), scale.length - 1);
+      // Orchestral: woodwind carries the melodic line above the sustained string chords
+      const melInst = isOrch ? woodwind : melody;
+      const durLen  = isOrch ? '4n' : noteLen;
+      melInst.triggerAttackRelease(scale[noteIdx], durLen, time, vel);
+
+      // Choir: also fire woodwind as a high soprano counter-voice (~40% of notes)
+      if (currentGenre === 'choir' && Math.random() < 0.40) {
+        const sopranoIdx = Math.min(noteIdx + 1, scale.length - 1);
+        woodwind.triggerAttackRelease(scale[sopranoIdx], noteLen, time + 0.03, vel * 0.7);
+      }
+    }
+  }, '8n');
+
+  // ── Chord sustain loop ('2n') ─────────────────────────────────────────────
+  // Retriggers organ (choir) or ambient pad on chord changes + as periodic refresh.
+  // For ambient pad: triggerAttack sustains indefinitely; tremolo provides the pulse.
+  let sustainChordName = '';
+  let sustainTick      = 0;
+
+  Tone.Transport.scheduleRepeat((time) => {
+    sustainTick++;
+    const chordChanged = S.chordName !== sustainChordName;
+
+    // Techno: sustained chord pad, shifts arpNotes up 2 octaves into melody register.
+    // Retriggers every 4 bars (8 × '2n') or on chord change.
+    if (currentGenre === 'techno' && (chordChanged || sustainTick % 8 === 0)) {
+      sustainChordName = S.chordName;
+      melody.releaseAll(time);
+      S.arpNotes.slice(0, 3).forEach((note, i) => {
+        // Shift up 2 octaves: 'C2' → 'C4', 'G2' → 'G4', etc.
+        const highNote = note.replace(/\d+$/, oct => String(parseInt(oct) + 2));
+        melody.triggerAttack(highNote, time + i * 0.03,
+          Math.max(0.58 - i * 0.12, 0.25));
+      });
+    }
+
+    if (currentGenre === 'choir' && (chordChanged || sustainTick % 8 === 0)) {
+      sustainChordName = S.chordName;
+      organ.releaseAll(time);
+      S.arpNotes.forEach((note, i) => {
+        organ.triggerAttackRelease(note, '2m', time + i * 0.04,
+          Math.max(0.55 - i * 0.08, 0.22));
+      });
+    }
+
+    // Orchestral: strings hold chord, retrigger every 2 bars or chord change
+    if (currentGenre === 'orchestral' && (chordChanged || sustainTick % 4 === 0)) {
+      sustainChordName = S.chordName;
+      melody.releaseAll(time);
+      S.arpNotes.slice(0, 3).forEach((note, i) => {
+        const strNote = note.replace(/\d+$/, oct => String(parseInt(oct) + 1));
+        melody.triggerAttack(strNote, time + i * 0.06, Math.max(0.52 - i * 0.1, 0.24));
+      });
+    }
+
+    if (currentGenre === 'ambient' && (chordChanged || sustainTick % 2 === 0)) {
+      sustainChordName = S.chordName;
+      ambientPad.releaseAll(time);
+      // Stagger note onsets for a wash-in rather than a simultaneous attack
+      S.arpNotes.forEach((note, i) => {
+        ambientPad.triggerAttack(note, time + i * 0.12,
+          Math.max(0.7 - i * 0.1, 0.28));
+      });
+    }
+
+    // Ambient organ: slow harmonic chord layer, retriggers every 4 bars
+    if (currentGenre === 'ambient' && (chordChanged || sustainTick % 8 === 0)) {
+      organ.releaseAll(time);
+      S.arpNotes.forEach((note, i) => {
+        // Shift up 1 octave for mid-register warmth
+        const midNote = note.replace(/\d+$/, oct => String(parseInt(oct) + 1));
+        organ.triggerAttackRelease(midNote, '2m', time + i * 0.18,
+          Math.max(0.45 - i * 0.07, 0.18));
+      });
+    }
+
+    // Sync tremolo rate to half-note pulse so pulsation locks to BPM
+    if (ambientTremolo) {
+      ambientTremolo.frequency.value = (S.bpm / 60) * 0.5;
+    }
+  }, '2n');
+
+  // ── Ambient sparse bass notes ('1m') ─────────────────────────────────────
+  let ambMeasure = 0;
+  Tone.Transport.scheduleRepeat((time) => {
+    if (currentGenre !== 'ambient') return;
+    ambMeasure++;
+    const sp    = SONG_PARTS[songPartIdx];
+    const scale = SCALES[S.scaleName];
+    // Sparse deep root note every 2–4 measures
+    const bassPeriod = sp.gate > 0.8 ? 2 : sp.gate > 0.5 ? 3 : 4;
+    if (ambMeasure % bassPeriod === 0) {
+      const noteIdx = Math.floor(Math.random() * 2);
+      ambientBassNote.triggerAttackRelease(scale[noteIdx], '2n', time,
+        (0.3 + Math.random() * 0.25) * sp.vel);
+    }
+  }, '1m');
+
+  // ── Ambient sparkle: triggered by bright image cells ('4n') ──────────────
+  // Scans all 4 grid rows for bright cells; top rows fire higher-octave notes
+  // so the visual brightness map is reflected across a wide pitch range.
+  //   row 0 (top)  → +2 octaves: crystal/bell register (C5–C7)
+  //   row 1        → +1 octave:  high melody register  (C4–C6)
+  //   rows 2–3     → no shift:   mid register           (C3–C5)
+  // Notes last '16n' (vs old '32n') so they read more clearly in the mix.
+  Tone.Transport.scheduleRepeat((time) => {
+    if (currentGenre !== 'ambient') return;
+    const sp    = SONG_PARTS[songPartIdx];
+    const scale = SCALES[S.scaleName];
+    const t16   = Tone.Time('16n').toSeconds();
+    let offset   = 0;
+    let firedAny = false;
+    let noteCount = 0;
+
+    for (let row = 0; row < GRID && noteCount < 5; row++) {
+      const octShift  = row === 0 ? 2 : row === 1 ? 1 : 0;
+      const threshold = 110 + row * 15; // top rows trigger more easily
+      for (let col = 0; col < GRID && noteCount < 5; col++) {
+        const br = S.cellBright[row * GRID + col];
+        if (br < threshold) continue;
+        const prob = ((br - threshold) / (255 - threshold)) * sp.gate * 0.7;
+        if (Math.random() > prob) continue;
+        const noteIdx = Math.min(4 + col + (br > 200 ? 1 : 0), scale.length - 1);
+        let note = scale[noteIdx];
+        if (octShift > 0) note = note.replace(/\d+$/, n => String(+n + octShift));
+        const vel = (0.25 + (br / 255) * 0.55) * sp.vel;
+        ambientSparkle.triggerAttackRelease(note, '16n', time + offset, vel);
+        offset  += t16 * 0.5;
+        firedAny = true;
+        noteCount++;
+      }
+    }
+
+    // Guaranteed minimum: at least one high shimmer so texture is never silent
+    if (!firedAny && Math.random() < 0.60) {
+      const noteIdx = 4 + Math.floor(Math.random() * (scale.length - 4));
+      let note = scale[noteIdx];
+      // Bias toward higher register for the minimum sparkle too
+      const octUp = Math.random() < 0.6 ? 1 : 0;
+      if (octUp) note = note.replace(/\d+$/, n => String(+n + octUp));
+      ambientSparkle.triggerAttackRelease(
+        note, '16n', time + t16 * Math.floor(Math.random() * 3),
+        (0.35 + Math.random() * 0.40) * sp.vel
+      );
+    }
+  }, '4n');
+
+  // Apply the initial genre preset so instruments start at their correct volumes
+  // rather than their construction defaults. Must come before Transport.start()
+  // so no seed notes are triggered (Transport.state !== 'started' guard).
+  setGenre(currentGenre);
+
+  Tone.Transport.start();
+}
+
+// ── RENDER LOOP ──────────────────────────────────────────────────────────────
+function resizeCanvas() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+let running = false;
+let overlayVisible = true;
+let firstFramePrimed = false;
+
+function drawLoop() {
+  if (!running) return;
+
+  lastRawSrc = testMode && testImgReady ? testImgEl : video;
+
+  // Draw video feed with effects first, then analyze post-effect canvas for audio
+  applyEffect(lastRawSrc);
+  analyzeFrame();
+
+  // Genre detection uses raw source separately for stability
+  updateAutoGenre(lastRawSrc);
+
+  // On the very first frame in auto mode, snap immediately to the best-fit genre
+  // rather than waiting for the EMA hysteresis to converge (which would always
+  // play techno for the first several bars).
+  if (!firstFramePrimed && autoGenreMode) {
+    firstFramePrimed = true;
+    const initial = computeGenreScores(lastRawSrc);
+    for (const g in autoScores) autoScores[g] = initial[g];
+    autoCurrentBest = Object.keys(initial).reduce((a, b) => initial[a] >= initial[b] ? a : b);
+    setGenre(autoCurrentBest);
+    const autoBtn = document.getElementById('autoGenreBtn');
+    if (autoBtn) autoBtn.textContent = 'AUTO: ' + autoCurrentBest.toUpperCase();
+  }
+
+  const cW = canvas.width  / GRID;
+  const cH = canvas.height / GRID;
+  const activeCol = seqStep % GRID;
+
+  if (overlayVisible) {
+    // Grid overlay: each cell tinted by its hue, brightened when active column
+    for (let row = 0; row < GRID; row++) {
+      for (let col = 0; col < GRID; col++) {
+        const ci   = row * GRID + col;
+        const mot  = S.cellMotion[ci];
+        const hue  = S.cellHue[ci];
+        const live = col === activeCol;
+        const x = col * cW, y = row * cH;
+
+        // Active column gets a brighter, wider alpha range
+        const alpha = live
+          ? 0.1 + Math.min(mot / 45, 0.55)
+          : Math.min(mot / 65, 0.38);
+        ctx.fillStyle = `hsla(${hue},78%,58%,${alpha})`;
+        ctx.fillRect(x, y, cW, cH);
+
+        ctx.strokeStyle = live ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = live ? 1.5 : 0.5;
+        ctx.strokeRect(x + 0.5, y + 0.5, cW - 1, cH - 1);
+
+        // Motion dot: radius scales with motion intensity
+        if (mot > M_GATE) {
+          const dotR = Math.min(mot / 6, Math.min(cW, cH) * 0.28);
+          ctx.beginPath();
+          ctx.arc(x + cW / 2, y + cH / 2, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = `hsla(${hue},100%,78%,0.65)`;
+          ctx.fill();
+        }
+      }
+    }
+
+    // Step indicator: row of dots across the top of the frame
+    const dotSpacing = canvas.width / STEPS;
+    for (let s = 0; s < STEPS; s++) {
+      const dx = s * dotSpacing + dotSpacing / 2;
+      ctx.beginPath();
+      ctx.arc(dx, 14, s === seqStep ? 5 : 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = s === seqStep ? '#00ff88' : 'rgba(255,255,255,0.25)';
+      ctx.fill();
+    }
+
+    // HUD text
+    document.getElementById('hBpm').textContent    = Math.round(S.bpm);
+    document.getElementById('hNote').textContent   = melodyNote;
+    document.getElementById('hScale').textContent  = S.chordName;
+    document.getElementById('hGenre').textContent  = currentGenre.toUpperCase();
+    document.getElementById('hMotion').textContent = Math.round(S.totalMotion);
+    document.getElementById('hBeat').textContent   = S.beatStyle;
+    document.getElementById('hTex').textContent    = textureLabel();
+    document.getElementById('hStep').textContent   = (seqStep + 1) + '/16';
+    const sp = SONG_PARTS[songPartIdx];
+    document.getElementById('hPart').textContent   = sp.name + ' ' + (songPartMeasure + 1) + '/' + sp.measures;
+  }
+
+  requestAnimationFrame(drawLoop);
+}
+
+// ── TEST MODE HELPERS ────────────────────────────────────────────────────────
+function enableTestMode(files) {
+  testImages   = files.map(f => ({ url: URL.createObjectURL(f), name: f.name }));
+  testImgIdx   = 0;
+  testImgReady = false;
+  testImgEl.onload = () => { testImgReady = true; };
+  testImgEl.src = testImages[0].url;
+  document.getElementById('testFilename').textContent = testImages[0].name;
+  document.getElementById('testCounter').textContent  = `1 / ${testImages.length}`;
+  testMode = true;
+
+  overlayVisible = true;
+  document.getElementById('hud').classList.add('on');
+  document.getElementById('mixer').classList.add('on');
+  document.getElementById('testPanel').classList.add('on');
+  document.getElementById('menuCameraItem').style.display = 'block';
+  document.getElementById('menuOverlayItem').textContent = '◼ OVERLAY';
+}
+
+function switchToCamera() {
+  testMode     = false;
+  testImgReady = false;
+  overlayVisible = false;
+  document.getElementById('hud').classList.remove('on');
+  document.getElementById('mixer').classList.remove('on');
+  document.getElementById('testPanel').classList.remove('on');
+  document.getElementById('menuCameraItem').style.display = 'none';
+  document.getElementById('menuOverlayItem').textContent = '◻ OVERLAY';
+  autoGenreMode    = true;
+  firstFramePrimed = false;
+  activeEffect     = 'glitch';
+  fxScratch        = null;
+  document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('autoGenreBtn').classList.add('active');
+  document.getElementById('autoGenreBtn').textContent = 'AUTO';
+  document.querySelectorAll('.fx-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.fx-btn[data-fx="glitch"]').classList.add('active');
+}
+
+// ── START ────────────────────────────────────────────────────────────────────
+let launched = false;
+async function launchApp() {
+  if (launched) return;
+  launched = true;
+
+  const overlay = document.getElementById('startOverlay');
+  overlay.querySelector('.echo-sub').textContent = 'INITIALIZING...';
+
+  try {
+    await initAudio();
+  } catch (e) {
+    alert('Audio error: ' + e);
+    launched = false;
+    overlay.querySelector('.echo-sub').textContent = 'TAP TO BEGIN';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await new Promise(res => video.addEventListener('loadedmetadata', res, { once: true }));
+  } catch (e) {
+    alert('Camera error: ' + e);
+    launched = false;
+    overlay.querySelector('.echo-sub').textContent = 'TAP TO BEGIN';
+    return;
+  }
+
+  overlay.style.display = 'none';
+  document.getElementById('menuBtn').classList.add('on');
+
+  // Live camera defaults: auto genre, glitch, overlay hidden
+  autoGenreMode  = true;
+  activeEffect   = 'glitch';
+  overlayVisible = false;
+  fxScratch      = null;
+  document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('autoGenreBtn').classList.add('active');
+  document.querySelectorAll('.fx-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.fx-btn[data-fx="glitch"]').classList.add('active');
+
+  // ── Mixer wiring ───────────────────────────────────────────────────────────
+  document.getElementById('mixerToggle').addEventListener('click', () => {
+    document.getElementById('mixerBody').classList.toggle('collapsed');
+  });
+  [
+    ['mxMelody', 'vMelody', () => melody.volume],
+    ['mxBass',   'vBass',   () => bass.volume],
+    ['mxKick',   'vKick',   () => kick.volume],
+    ['mxSnare',  'vSnare',  () => snare.volume],
+    ['mxHihat',  'vHihat',  () => hihat.volume],
+  ].forEach(([sliderId, valId, getVol]) => {
+    const slider = document.getElementById(sliderId);
+    const label  = document.getElementById(valId);
+    slider.addEventListener('input', () => {
+      const db = parseInt(slider.value, 10);
+      getVol().value = db;
+      label.textContent = db;
+    });
+  });
+
+  // ── Test panel wiring ──────────────────────────────────────────────────────
+  document.getElementById('testToggle').addEventListener('click', () => {
+    document.getElementById('testBody').classList.toggle('collapsed');
+  });
+  document.getElementById('testPrev').addEventListener('click', () => {
+    loadTestImage(testImgIdx - 1);
+  });
+  document.getElementById('testNext').addEventListener('click', () => {
+    loadTestImage(testImgIdx + 1);
+  });
+  const autoCb = document.getElementById('testAuto');
+  autoCb.addEventListener('change', () => {
+    autoCb.checked ? startTestCycle() : stopTestCycle();
+  });
+  document.getElementById('testDwell').addEventListener('change', () => {
+    if (autoCb.checked) startTestCycle(); // restart with updated interval
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft')  loadTestImage(testImgIdx - 1);
+    if (e.key === 'ArrowRight') loadTestImage(testImgIdx + 1);
+  });
+
+  document.querySelectorAll('.genre-btn[data-genre]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Disable auto mode when user manually picks a genre
+      autoGenreMode = false;
+      autoPendingSwitch = null;
+      document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      setGenre(btn.dataset.genre);
+    });
+  });
+
+  document.getElementById('autoGenreBtn').addEventListener('click', () => {
+    autoGenreMode = !autoGenreMode;
+    const btn = document.getElementById('autoGenreBtn');
+    if (autoGenreMode) {
+      document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      autoDwellBars = 0;
+      autoPendingSwitch = null;
+      // Prime scores immediately from the current image so EMA starts at the right values
+      if (lastRawSrc) {
+        const primed = computeGenreScores(lastRawSrc);
+        for (const g in autoScores) autoScores[g] = primed[g];
+        autoCurrentBest = Object.keys(autoScores).reduce((a, b) => autoScores[a] >= autoScores[b] ? a : b);
+        setGenre(autoCurrentBest);
+      } else {
+        for (const g in autoScores) autoScores[g] = 0.25;
+      }
+      btn.textContent = 'AUTO: ' + autoCurrentBest.toUpperCase();
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = 'AUTO';
+    }
+  });
+
+  document.querySelectorAll('.fx-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.fx-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeEffect = btn.dataset.fx;
+      // glitch needs a fresh scratch buffer each time it's selected
+      if (activeEffect !== 'pixel') fxScratch = null;
+    });
+  });
+
+  document.getElementById('menuOverlayItem').addEventListener('click', () => {
+    document.getElementById('menuPanel').classList.remove('open');
+    overlayVisible = !overlayVisible;
+    const hud   = document.getElementById('hud');
+    const mixer = document.getElementById('mixer');
+    const btn   = document.getElementById('menuOverlayItem');
+    if (overlayVisible) {
+      hud.classList.add('on');
+      mixer.classList.add('on');
+      btn.textContent = '◼ OVERLAY';
+    } else {
+      hud.classList.remove('on');
+      mixer.classList.remove('on');
+      btn.textContent = '◻ OVERLAY';
+    }
+  });
+
+  running = true;
+
+  // Prime S with the current image before sequencer starts,
+  // so the first notes aren't always the same default chord.
+  const primeSrc = testMode && testImgReady ? testImgEl : null;
+  if (primeSrc) {
+    ctx.drawImage(primeSrc, 0, 0, canvas.width, canvas.height);
+    analyzeFrame();
+  }
+
+  // Live camera: auto-enable genre detection, glitch effect, and hide overlay
+  if (!testMode) {
+    autoGenreMode    = true;
+    activeEffect     = 'glitch';
+    overlayVisible   = false;
+    fxScratch        = null;
+    document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('autoGenreBtn').classList.add('active');
+    document.querySelectorAll('.fx-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.fx-btn[data-fx="glitch"]').classList.add('active');
+    document.getElementById('hud').classList.remove('on');
+    document.getElementById('mixer').classList.remove('on');
+  }
+
+  startSequencer();
+  drawLoop();
+}
+
+// Start overlay tap → launch with live camera
+document.getElementById('startOverlay').addEventListener('click', () => {
+  testMode = false;
+  launchApp();
+});
+
+// Hamburger menu toggle
+document.getElementById('menuBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('menuPanel').classList.toggle('open');
+});
+
+// Close menu when tapping anywhere else
+document.addEventListener('click', () => {
+  document.getElementById('menuPanel').classList.remove('open');
+});
+
+const testFileInput = document.getElementById('testFileInput');
+
+// Menu: load test images
+document.getElementById('menuTestItem').addEventListener('click', () => {
+  document.getElementById('menuPanel').classList.remove('open');
+  testFileInput.click();
+});
+
+// Menu: switch back to live camera
+document.getElementById('menuCameraItem').addEventListener('click', () => {
+  document.getElementById('menuPanel').classList.remove('open');
+  if (launched) switchToCamera();
+});
+
+testFileInput.addEventListener('change', () => {
+  const files = Array.from(testFileInput.files).filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  testImages   = files.map(f => ({ url: URL.createObjectURL(f), name: f.name }));
+  testImgReady = false;
+  testImgEl.onload = () => { testImgReady = true; };
+  testImgEl.src    = testImages[0].url;
+  document.getElementById('testFilename').textContent = testImages[0].name;
+  document.getElementById('testCounter').textContent  = `1 / ${testImages.length}`;
+  testImgIdx = 0;
+  testMode   = true;
+  if (!launched) {
+    launchApp();
+  } else {
+    // App already running: switch to test mode without full re-init
+    overlayVisible = true;
+    document.getElementById('hud').classList.add('on');
+    document.getElementById('mixer').classList.add('on');
+    document.getElementById('testPanel').classList.add('on');
+    document.getElementById('menuCameraItem').style.display = 'block';
+    document.getElementById('menuOverlayItem').textContent = '◼ OVERLAY';
+  }
+});
+</script>
+</body>
+</html>
