@@ -197,11 +197,16 @@
 <div id="mixer">
   <div id="mixerToggle">MIXER ▾</div>
   <div id="mixerBody">
-    <div class="mx-row"><span>MELODY</span><input type="range" id="mxMelody" min="-36" max="6" step="1" value="-12"><span class="mx-val" id="vMelody">-12</span></div>
-    <div class="mx-row"><span>BASS</span>  <input type="range" id="mxBass"   min="-36" max="6" step="1" value="-10"><span class="mx-val" id="vBass">-10</span></div>
-    <div class="mx-row"><span>KICK</span>  <input type="range" id="mxKick"   min="-36" max="6" step="1" value="-5"> <span class="mx-val" id="vKick">-5</span></div>
-    <div class="mx-row"><span>SNARE</span> <input type="range" id="mxSnare"  min="-36" max="6" step="1" value="-14"><span class="mx-val" id="vSnare">-14</span></div>
-    <div class="mx-row"><span>HIHAT</span> <input type="range" id="mxHihat"  min="-36" max="6" step="1" value="-12"><span class="mx-val" id="vHihat">-12</span></div>
+    <div class="mx-row"><span>MELODY</span> <input type="range" id="mxMelody"   min="-36" max="12" step="1" value="-18"><span class="mx-val" id="vMelody">-18</span></div>
+    <div class="mx-row"><span>BASS</span>   <input type="range" id="mxBass"     min="-36" max="12" step="1" value="-17"><span class="mx-val" id="vBass">-17</span></div>
+    <div class="mx-row"><span>KICK</span>   <input type="range" id="mxKick"     min="-36" max="12" step="1" value="-30"><span class="mx-val" id="vKick">-30</span></div>
+    <div class="mx-row"><span>SNARE</span>  <input type="range" id="mxSnare"    min="-36" max="12" step="1" value="-20"><span class="mx-val" id="vSnare">-20</span></div>
+    <div class="mx-row"><span>HIHAT</span>  <input type="range" id="mxHihat"    min="-36" max="12" step="1" value="-18"><span class="mx-val" id="vHihat">-18</span></div>
+    <div class="mx-row"><span>ORGAN</span>  <input type="range" id="mxOrgan"    min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vOrgan">-36</span></div>
+    <div class="mx-row"><span>WOODWND</span><input type="range" id="mxWoodwind" min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vWoodwind">-36</span></div>
+    <div class="mx-row"><span>PAD</span>    <input type="range" id="mxPad"      min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vPad">-36</span></div>
+    <div class="mx-row"><span>PAD BASS</span><input type="range" id="mxPadBass" min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vPadBass">-36</span></div>
+    <div class="mx-row"><span>SPARKLE</span><input type="range" id="mxSparkle"  min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vSparkle">-36</span></div>
   </div>
 </div>
 <div id="hud">
@@ -423,7 +428,7 @@ const GENRE_PRESETS = {
     reverbWet: 0.28, ppWet: 0.28, chorusWet: 0,
     hallWet: 0, autoFilterWet: 0, phaserWet: 0.38,
     vibratoWet: 0, vibratoDepth: 0.04, vibratoFreq: 5,
-    vol: { melody: -18, bass: -17, kick: -12, snare: -20, hihat: -18,
+    vol: { melody: -18, bass: -17, kick: -30, snare: -20, hihat: -18,
            organ: -36, woodwind: -36, ambientPad: -36,
            ambientBassNote: -36, ambientSparkle: -36 },
   },
@@ -1306,11 +1311,16 @@ function setGenre(name) {
 
   // All volumes ramp simultaneously — old genre fades out, new fades in.
   [
-    ['mxMelody', 'vMelody', melody,  p.vol.melody],
-    ['mxBass',   'vBass',   bass,    p.vol.bass],
-    ['mxKick',   'vKick',   kick,    p.vol.kick],
-    ['mxSnare',  'vSnare',  snare,   p.vol.snare],
-    ['mxHihat',  'vHihat',  hihat,   p.vol.hihat],
+    ['mxMelody',   'vMelody',   melody,          p.vol.melody],
+    ['mxBass',     'vBass',     bass,             p.vol.bass],
+    ['mxKick',     'vKick',     kick,             p.vol.kick],
+    ['mxSnare',    'vSnare',    snare,            p.vol.snare],
+    ['mxHihat',    'vHihat',    hihat,            p.vol.hihat],
+    ['mxOrgan',    'vOrgan',    organ,            p.vol.organ],
+    ['mxWoodwind', 'vWoodwind', woodwind,         p.vol.woodwind],
+    ['mxPad',      'vPad',      ambientPad,       p.vol.ambientPad],
+    ['mxPadBass',  'vPadBass',  ambientBassNote,  p.vol.ambientBassNote],
+    ['mxSparkle',  'vSparkle',  ambientSparkle,   p.vol.ambientSparkle],
   ].forEach(([sid, vid, inst, db]) => {
     inst.volume.rampTo(db, R);
     const s = document.getElementById(sid);
@@ -1318,11 +1328,6 @@ function setGenre(name) {
     if (s) s.value = db;
     if (v) v.textContent = db;
   });
-  organ.volume.rampTo(p.vol.organ, R);
-  woodwind.volume.rampTo(p.vol.woodwind, R);
-  ambientPad.volume.rampTo(p.vol.ambientPad, R);
-  ambientBassNote.volume.rampTo(p.vol.ambientBassNote, R);
-  ambientSparkle.volume.rampTo(p.vol.ambientSparkle, R);
 
   // Seed ambient pad so it doesn't wait up to one bar for the sustain loop.
   if (name === 'ambient' && Tone.Transport.state === 'started') {
@@ -2076,11 +2081,16 @@ async function launchApp() {
     document.getElementById('mixerBody').classList.toggle('collapsed');
   });
   [
-    ['mxMelody', 'vMelody', () => melody.volume],
-    ['mxBass',   'vBass',   () => bass.volume],
-    ['mxKick',   'vKick',   () => kick.volume],
-    ['mxSnare',  'vSnare',  () => snare.volume],
-    ['mxHihat',  'vHihat',  () => hihat.volume],
+    ['mxMelody',   'vMelody',   () => melody.volume],
+    ['mxBass',     'vBass',     () => bass.volume],
+    ['mxKick',     'vKick',     () => kick.volume],
+    ['mxSnare',    'vSnare',    () => snare.volume],
+    ['mxHihat',    'vHihat',    () => hihat.volume],
+    ['mxOrgan',    'vOrgan',    () => organ.volume],
+    ['mxWoodwind', 'vWoodwind', () => woodwind.volume],
+    ['mxPad',      'vPad',      () => ambientPad.volume],
+    ['mxPadBass',  'vPadBass',  () => ambientBassNote.volume],
+    ['mxSparkle',  'vSparkle',  () => ambientSparkle.volume],
   ].forEach(([sliderId, valId, getVol]) => {
     const slider = document.getElementById(sliderId);
     const label  = document.getElementById(valId);
