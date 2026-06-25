@@ -136,6 +136,9 @@
     .mx-row span:first-child { width: 52px; color: rgba(255,255,255,0.6); font-size: 11px; }
     .mx-row input[type=range] { flex: 1; accent-color: #00ff88; cursor: pointer; }
     .mx-val { width: 30px; text-align: right; color: #00ff88; font-size: 11px; }
+    #mixerBody hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 4px 0; }
+    .mx-section { font-size: 10px; color: rgba(255,255,255,0.35); letter-spacing: 1px; padding: 2px 0 4px; }
+    .mx-readout { font-size: 11px; color: rgba(255,255,255,0.5); display: flex; gap: 12px; flex-wrap: wrap; padding-top: 2px; }
   </style>
 </head>
 <body>
@@ -146,7 +149,7 @@
 </div>
 <button id="menuBtn" aria-label="Menu">☰</button>
 <div id="menuPanel">
-  <button class="menu-item" id="menuOverlayItem">◻ OVERLAY</button>
+  <button class="menu-item" id="menuOverlayItem">◻ DEBUG</button>
   <button class="menu-item" id="menuTestItem">⊞ LOAD TEST IMAGES</button>
   <button class="menu-item" id="menuCameraItem" style="display:none">⊙ LIVE CAMERA</button>
 </div>
@@ -207,6 +210,15 @@
     <div class="mx-row"><span>PAD</span>    <input type="range" id="mxPad"      min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vPad">-36</span></div>
     <div class="mx-row"><span>PAD BASS</span><input type="range" id="mxPadBass" min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vPadBass">-36</span></div>
     <div class="mx-row"><span>SPARKLE</span><input type="range" id="mxSparkle"  min="-36" max="12" step="1" value="-36"><span class="mx-val" id="vSparkle">-36</span></div>
+    <hr>
+    <div class="mx-section">DEBUG</div>
+    <div class="mx-row"><span>MIC</span>    <input type="range" id="dbMic"    min="0" max="1" step="0.05" value="0.5"><span class="mx-val" id="vDbMic">.50</span></div>
+    <div class="mx-row"><span>MOTION</span> <input type="range" id="dbMotion" min="0" max="1" step="0.05" value="0.5"><span class="mx-val" id="vDbMotion">.50</span></div>
+    <div class="mx-readout">
+      ROOM <span class="hv" id="hMicRms">-</span>
+      &nbsp; TILT <span class="hv" id="hTilt">-</span>°
+      &nbsp; SHAKE <span class="hv" id="hShake">-</span>
+    </div>
   </div>
 </div>
 <div id="hud">
@@ -1187,7 +1199,7 @@ let reverb, hallReverb, ppDelay, melodyChorus, melodyVibrato;
 let ambientAutoFilter;
 let organ, woodwind, ambientPad, ambientTremolo;
 let ambientBassNote, ambientSparkle;
-let masterComp, ambientDryGain, drumBus;
+let masterComp, ambientDryGain, drumBus, masterFilter;
 let currentBassMode = '';
 let currentGenre = 'techno';
 let melodyNote = '4n'; // current melody subdivision (for HUD)
@@ -1343,14 +1355,16 @@ function setGenre(name) {
 async function initAudio() {
   await Tone.start();
 
-  // Master chain: reverb + hall reverb -> compressor -> limiter -> out
+  // Master chain: reverb + hall reverb -> compressor -> limiter -> masterFilter -> out
+  // masterFilter starts wide open (20kHz) and is swept by tilt when motion influence > 0.
   // Compressor with makeup gain brings up quiet ambient/choir layers
   // while the limiter prevents clipping.
   reverb = new Tone.Reverb({ decay: 2.5, wet: 0.28 });
   await reverb.generate();
   hallReverb = new Tone.Reverb({ decay: 2.5, wet: 0 });
   await hallReverb.generate();
-  const limiter = new Tone.Limiter(-1).toDestination();
+  masterFilter = new Tone.Filter({ frequency: 20000, type: 'lowpass', rolloff: -12 }).toDestination();
+  const limiter = new Tone.Limiter(-1).connect(masterFilter);
   masterComp = new Tone.Compressor({
     threshold: -22, ratio: 4, attack: 0.008, release: 0.22, knee: 8,
   }).connect(limiter);
@@ -1486,6 +1500,123 @@ async function initAudio() {
 //      dark (<20%)    → fires every whole note (¼×)
 //    This keeps melody always an integer multiple of the drum pulse → always in sync.
 //    Bass plays unconditionally on every melody fire; melody notes are motion-gated.
+
+// ── MIC / MOTION ─────────────────────────────────────────────────────────────
+let micInfluence    = 0.5;
+let motionInfluence = 0.5;
+
+// Mic state
+let micAnalyser   = null;
+let micTimeDomain = null;
+let micRms        = 0;
+let micPrevRms    = 0;
+
+// Motion state
+let accelGamma   = 0;   // left-right tilt, degrees (-90 to 90)
+let accelBeta    = 0;   // front-back tilt, degrees (0=flat, 90=upright)
+let accelShake   = 0;   // EMA-smoothed shake magnitude
+let accelPrevMag = 9.8; // previous total acceleration (gravity baseline)
+
+async function initMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const rawCtx  = Tone.context.rawContext;
+    const src     = rawCtx.createMediaStreamSource(stream);
+    micAnalyser   = rawCtx.createAnalyser();
+    micAnalyser.fftSize = 1024;
+    micAnalyser.smoothingTimeConstant = 0.6;
+    src.connect(micAnalyser); // analysis only — not connected to destination
+    micTimeDomain = new Float32Array(micAnalyser.fftSize);
+  } catch (e) {
+    console.warn('Mic unavailable:', e);
+  }
+}
+
+function initMotion() {
+  function listenOrientation() {
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.gamma !== null) accelGamma = e.gamma;
+      if (e.beta  !== null) accelBeta  = e.beta;
+    });
+  }
+  function listenMotion() {
+    window.addEventListener('devicemotion', (e) => {
+      const a = e.accelerationIncludingGravity;
+      if (!a) return;
+      const mag   = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+      const delta = Math.abs(mag - accelPrevMag);
+      accelShake  = accelShake * 0.88 + delta * 0.12;
+      accelPrevMag = mag;
+    });
+  }
+  // iOS 13+ requires explicit permission for DeviceMotion/Orientation.
+  // Must be called from (or shortly after) a user gesture.
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(r => { if (r === 'granted') listenOrientation(); })
+      .catch(() => {});
+  } else {
+    listenOrientation();
+  }
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(r => { if (r === 'granted') listenMotion(); })
+      .catch(() => {});
+  } else {
+    listenMotion();
+  }
+}
+
+// Called each frame from drawLoop. Reads mic RMS and applies it to the audio graph.
+function applyMicEffect() {
+  if (!micAnalyser) return;
+  micAnalyser.getFloatTimeDomainData(micTimeDomain);
+
+  // Compute RMS of the mic signal
+  let sum = 0;
+  for (let i = 0; i < micTimeDomain.length; i++) sum += micTimeDomain[i] ** 2;
+  const rms = Math.sqrt(sum / micTimeDomain.length);
+  micRms = micRms * 0.90 + rms * 0.10; // EMA smooth
+
+  // Transient detection: sharp level jump → trigger an ambientSparkle note
+  if (rms > micPrevRms * 2.8 && rms > 0.02 && Tone.Transport.state === 'started') {
+    const note = S.arpNotes[Math.floor(Math.random() * S.arpNotes.length)];
+    const highNote = note.replace(/\d+$/, n => String(parseInt(n) + 1));
+    ambientSparkle.triggerAttackRelease(highNote, '16n', Tone.now(), 0.55 * micInfluence);
+  }
+  micPrevRms = rms;
+
+  // Room loudness → hallReverb wet (loud ambient space = more hall reverb).
+  // Additive on top of whatever the genre preset sets.
+  const roomWet   = Math.min(micRms * 12, 1) * 0.45 * micInfluence;
+  const genreWet  = GENRE_PRESETS[currentGenre].hallWet;
+  hallReverb.wet.rampTo(Math.min(genreWet + roomWet, 0.9), 0.8);
+}
+
+// Called each frame from drawLoop. Maps tilt/shake to audio parameters.
+function applyMotionEffect() {
+  // gamma (left-right tilt): sweeps masterFilter cutoff.
+  // Tilt left (negative gamma) = darker. Neutral/right = wide open.
+  // When motionInfluence=0 the filter stays at 20kHz (fully open).
+  const tiltNorm = Math.max(-1, Math.min(1, accelGamma / 60));
+  const darkness = Math.max(0, -tiltNorm); // 0 = no darkening, 1 = full dark
+  const filtFreq = 20000 * Math.pow(2, -darkness * 4 * motionInfluence);
+  masterFilter.frequency.rampTo(filtFreq, 0.12);
+
+  // beta (front-back tilt): how upright the phone is → chorus/stereo width.
+  // Upright (beta≈90) = moderate. Laid flat (beta≈0) or fully forward = more.
+  const uprightNorm = Math.max(0, Math.min(1, (90 - Math.abs(accelBeta - 90)) / 90));
+  const chorusWet = GENRE_PRESETS[currentGenre].chorusWet + uprightNorm * 0.35 * motionInfluence;
+  melodyChorus.wet.rampTo(Math.min(chorusWet, 0.9), 0.3);
+
+  // Shake → reverb wash burst (then decays back to genre preset)
+  const shakeWet = Math.min(accelShake * 0.12 * motionInfluence, 0.5);
+  const genreRevWet = GENRE_PRESETS[currentGenre].reverbWet;
+  reverb.wet.rampTo(Math.min(genreRevWet + shakeWet, 0.9), 0.15);
+}
+
 function startSequencer() {
   Tone.Transport.bpm.value = S.bpm; // initial value; analyzeFrame() updates it each frame
 
@@ -1886,7 +2017,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 let running = false;
-let overlayVisible = true;
+let debugVisible = true;
 let firstFramePrimed = false;
 
 const FRAME_MS = 1000 / 30;  // cap to 30 fps — halves rAF/canvas/getImageData work on mobile
@@ -1924,7 +2055,7 @@ function drawLoop(ts = 0) {
   const activeRing   = Math.floor(seqStep / GRID);
   const activeSector = seqStep % GRID;
 
-  // Polar overlay: always drawn regardless of overlayVisible.
+  // Polar overlay: always drawn regardless of debugVisible.
   // 4 rings × 4 sectors. Draw outer rings first so inner rings
   // render on top when they overlap near the center.
   {
@@ -1976,7 +2107,11 @@ function drawLoop(ts = 0) {
     }
   }
 
-  if (overlayVisible) {
+  // Apply mic and motion effects every frame regardless of debug visibility
+  applyMicEffect();
+  applyMotionEffect();
+
+  if (debugVisible) {
     // HUD text
     document.getElementById('hBpm').textContent    = Math.round(S.bpm);
     document.getElementById('hNote').textContent   = melodyNote;
@@ -1988,6 +2123,10 @@ function drawLoop(ts = 0) {
     document.getElementById('hStep').textContent   = (seqStep + 1) + '/16';
     const sp = SONG_PARTS[songPartIdx];
     document.getElementById('hPart').textContent   = sp.name + ' ' + (songPartMeasure + 1) + '/' + sp.measures;
+    // Mic / motion readouts in mixer debug section
+    document.getElementById('hMicRms').textContent = Math.round(micRms * 1000);
+    document.getElementById('hTilt').textContent   = Math.round(accelGamma);
+    document.getElementById('hShake').textContent  = accelShake.toFixed(1);
   }
 
 }
@@ -2003,23 +2142,23 @@ function enableTestMode(files) {
   document.getElementById('testCounter').textContent  = `1 / ${testImages.length}`;
   testMode = true;
 
-  overlayVisible = true;
+  debugVisible = true;
   document.getElementById('hud').classList.add('on');
   document.getElementById('mixer').classList.add('on');
   document.getElementById('testPanel').classList.add('on');
   document.getElementById('menuCameraItem').style.display = 'block';
-  document.getElementById('menuOverlayItem').textContent = '◼ OVERLAY';
+  document.getElementById('menuOverlayItem').textContent = '◼ DEBUG';
 }
 
 function switchToCamera() {
   testMode     = false;
   testImgReady = false;
-  overlayVisible = false;
+  debugVisible = false;
   document.getElementById('hud').classList.remove('on');
   document.getElementById('mixer').classList.remove('on');
   document.getElementById('testPanel').classList.remove('on');
   document.getElementById('menuCameraItem').style.display = 'none';
-  document.getElementById('menuOverlayItem').textContent = '◻ OVERLAY';
+  document.getElementById('menuOverlayItem').textContent = '◻ DEBUG';
   autoGenreMode    = true;
   firstFramePrimed = false;
   activeEffect     = 'glitch';
@@ -2069,7 +2208,7 @@ async function launchApp() {
   // Live camera defaults: auto genre, glitch, overlay hidden
   autoGenreMode  = true;
   activeEffect   = 'glitch';
-  overlayVisible = false;
+  debugVisible = false;
   fxScratch      = null;
   document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('autoGenreBtn').classList.add('active');
@@ -2100,6 +2239,30 @@ async function launchApp() {
       label.textContent = db;
     });
   });
+
+  // ── Debug sliders ──────────────────────────────────────────────────────────
+  const dbMicSlider    = document.getElementById('dbMic');
+  const dbMotionSlider = document.getElementById('dbMotion');
+  dbMicSlider.addEventListener('input', () => {
+    micInfluence = parseFloat(dbMicSlider.value);
+    document.getElementById('vDbMic').textContent = micInfluence.toFixed(2);
+    // When influence hits 0, restore genre's hallReverb wet immediately
+    if (micInfluence === 0) hallReverb.wet.rampTo(GENRE_PRESETS[currentGenre].hallWet, 0.5);
+  });
+  dbMotionSlider.addEventListener('input', () => {
+    motionInfluence = parseFloat(dbMotionSlider.value);
+    document.getElementById('vDbMotion').textContent = motionInfluence.toFixed(2);
+    // When influence hits 0, restore neutral master filter and genre chorus
+    if (motionInfluence === 0) {
+      masterFilter.frequency.rampTo(20000, 0.3);
+      melodyChorus.wet.rampTo(GENRE_PRESETS[currentGenre].chorusWet, 0.3);
+      reverb.wet.rampTo(GENRE_PRESETS[currentGenre].reverbWet, 0.3);
+    }
+  });
+
+  // ── Mic + motion init ──────────────────────────────────────────────────────
+  initMic();
+  initMotion();
 
   // ── Test panel wiring ──────────────────────────────────────────────────────
   document.getElementById('testToggle').addEventListener('click', () => {
@@ -2170,18 +2333,18 @@ async function launchApp() {
 
   document.getElementById('menuOverlayItem').addEventListener('click', () => {
     document.getElementById('menuPanel').classList.remove('open');
-    overlayVisible = !overlayVisible;
+    debugVisible = !debugVisible;
     const hud   = document.getElementById('hud');
     const mixer = document.getElementById('mixer');
     const btn   = document.getElementById('menuOverlayItem');
-    if (overlayVisible) {
+    if (debugVisible) {
       hud.classList.add('on');
       mixer.classList.add('on');
-      btn.textContent = '◼ OVERLAY';
+      btn.textContent = '◼ DEBUG';
     } else {
       hud.classList.remove('on');
       mixer.classList.remove('on');
-      btn.textContent = '◻ OVERLAY';
+      btn.textContent = '◻ DEBUG';
     }
   });
 
@@ -2199,7 +2362,7 @@ async function launchApp() {
   if (!testMode) {
     autoGenreMode    = true;
     activeEffect     = 'glitch';
-    overlayVisible   = false;
+    debugVisible   = false;
     fxScratch        = null;
     document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('autoGenreBtn').classList.add('active');
@@ -2247,6 +2410,14 @@ async function launchApp() {
 // Tone.start() must be the very first await in a direct gesture handler on iOS —
 // the user-gesture context does not reliably propagate through nested async calls.
 document.getElementById('startOverlay').addEventListener('click', async () => {
+  // iOS 13+ requires DeviceMotion/Orientation permission from a gesture handler.
+  // Request here so initMotion() (called later in launchApp) succeeds.
+  if (typeof DeviceMotionEvent?.requestPermission === 'function') {
+    try { await DeviceMotionEvent.requestPermission(); } catch (_) {}
+  }
+  if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+    try { await DeviceOrientationEvent.requestPermission(); } catch (_) {}
+  }
   await Tone.start();
   testMode = false;
   launchApp();
@@ -2293,12 +2464,12 @@ testFileInput.addEventListener('change', async () => {
     launchApp();
   } else {
     // App already running: switch to test mode without full re-init
-    overlayVisible = true;
+    debugVisible = true;
     document.getElementById('hud').classList.add('on');
     document.getElementById('mixer').classList.add('on');
     document.getElementById('testPanel').classList.add('on');
     document.getElementById('menuCameraItem').style.display = 'block';
-    document.getElementById('menuOverlayItem').textContent = '◼ OVERLAY';
+    document.getElementById('menuOverlayItem').textContent = '◼ DEBUG';
   }
 });
 
