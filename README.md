@@ -7,4 +7,4 @@ The aim of the project is to create a synthetic synchronicity. Does the music ha
 
 Note: There is no backend server, everything runs in your web browser. So while the webapp can't be used for spying, it may cause your phone to overheat.
 
-(Try it yourself!](https://mrericsir.github.io/resonate_glitch/)
+[Try it yourself!](https://mrericsir.github.io/resonate_glitch/)
